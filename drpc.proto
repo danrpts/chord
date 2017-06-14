@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+service drpc {
+  rpc ping (Timestamp) returns (Timestamp) {}
+  rpc lookup (X) returns (Z) {}
+  rpc get(X) returns (Y) {}
+  rpc set(Y) returns (X) {}
+}
+
+message Timestamp {
+  int64 seconds = 1;
+  int32 nanos = 2;
+}
+
+message X {
+  bytes hash = 1;
+}
+
+message Y {
+  bytes hash = 1;
+  bytes value = 2;
+}
+
+message Z {
+  string address = 1;
+}
