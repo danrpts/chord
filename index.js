@@ -3,144 +3,208 @@ const readline = require('readline');
 const dht = require('./dht.js');
 
 function printUsage () {
-  console.log('Usage: dht [-q] [-4] [-6] [-i filename] [-p address port]...\n',
-              '           port [address port]...\n');
+  console.log('Usage: chord [--version] [--help]\n',
+              '            <command> [<args>]\n');
 }
 
 function printHelp () {
-    console.log('Commands may be abbreviated.  Commands are:\n\n',
-                'ping     ping a ring node\n',
-                'dump     display node info\n',
-                'quit     exit ring shell\n',
-                'new      create a new ring network\n',
-                'join     join a ring network\n',
-                'show     show joined ring networks\n',
-                'leave    leave a ring network\n',
-                'get      get value from a ring network\n',
-                'set      set value in a ring network\n');
+  console.log('Commands are:\n\n',
+              'on [-p <port>]              Enable this node\n',
+              'off                         Disable this node\n',
+              'ping <address>              Ping remote node\n',
+              'join <address>              Add this node to a network\n',
+              'leave                       Remove this node from network\n',
+              'get <key>                   Find value in network\n',
+              'set <key> <value>           Update key in network\n',
+              'clear                       Clear the terminal screen\n',
+              'quit                        Exit shell immediately\n',
+              'help                        Display command help');
 }
 
-function main () {
 
-  var argv = minimist(process.argv.slice(2));
+// TODO
+// change slice later
+// note the let
+// input args from node command
+var argv = minimist(process.argv.slice(2));
 
-  var port = argv.p || argv.port;
+if (argv.version) {
+  console.log(require('./package.json').version);
+  process.exit(0);
+} else if (argv.help) {
+  printUsage();
+  printHelp();
+  process.exit(0);
+}
 
-  var peer = new dht.Peer(port);  
+// begin cli
+var peer = null;
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout,
+  prompt: "chord> "
+});
 
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-    prompt: "ring> "
-  });
+rl.prompt();
 
-  rl.prompt();
+rl.on('line', (line) => {
 
-  rl.on('line', (line) => {
+  if (!line) {
+    rl.prompt();
+    return;
+  }
 
-    if (!line) {
-      rl.prompt();
-      return;
-    }
+  var [cmd, ...args] = line.trim().split(' ');
 
-    var [cmd, ...args] = line.trim().split(' ');
+  // TODO
+  // handle empty line
 
-    // TODO
-    // handle empty line
+  switch (cmd) {
 
-    switch (cmd) {
+    case 'on':
 
-      case 'help':
+      args = minimist(args);
+
+      var port = parseInt(args.p);
+
+      if (!args.p) {
 
         printHelp();
 
         rl.prompt();
 
-        break;
+        return;
 
-      case 'quit':
+      // TODO
+      // check what GRPC uses as transport protocol
+      // and if allowable lower port space
+      // user supplied port (create node)
+      } else if (1024 > port || port > 65535) {
 
-        process.exit(0);
-
-        break;
-
-      case 'ping':
-        
-        var address = args[0];
-        
-        peer.ping(address, () => {
-          rl.prompt();
-        });
-        
-        break;
-
-      case 'join':
-        
-        var address = args[0];
-        
-        peer.join(address, () => {
-
-          rl.prompt();
-          
-        });
-        
-        break;
-
-      case 'get':
-        
-        peer.get(args[0], (err, res) => {
-
-          if (err) {
-            console.log(err);
-          } else {
-            console.log(`GET ${res.hash.toString('hex')}: ${res.value.toString()}`);
-          }
-
-          rl.prompt();
-
-        });
-        
-        break;
-
-      case 'set':
-
-        peer.set(args[0], args[1], (err, res) => {
-          
-          if (err) {
-            console.log(err);
-          } else {
-            console.log(`SET ${res.hash.toString('hex')}`);
-          }
-
-          rl.prompt();
-
-        });
-        
-        break;
-
-      case 'dump':
-        
-        peer.dump();
-          
-        rl.prompt();
-        
-        break;
-
-      default: 
-
-        console.log('Invalid command');
+        console.log('CHORD_INVALID_PORT');
 
         rl.prompt();
 
-        break;
-    }
+        return;
 
-  }).on('close', () => {
+      }
+        
+      peer = new dht.Peer(port);
 
-    process.exit(0);
+      console.log(`UP ${peer.addr} (${peer.id})`);
 
-  });
+      rl.prompt();
 
-}
+      break;
 
-main();
+    case 'ping':
+      
+      var addr = args[0];
+      
+      (async () => {
+
+        var t;
+
+        try {
+        
+          t = await peer.ping(addr);
+        
+          console.log(`PING ${addr} ${(t.dif.nans / 1e6).toPrecision(3)} ms`);
+        
+        } catch (e) {
+          
+          console.log('CHORD_PING_ERROR', e);
+
+        }
+
+        rl.prompt();
+
+      })();
+
+      break;
+
+    case 'join':
+      
+      var addr = args[0];
+      
+      (async () => {
+
+        var succ;
+
+        try {
+        
+          succ = await peer.join(addr);
+        
+          console.log(`JOIN ${succ.addr}`);
+        
+        } catch (e) {
+          
+          console.log('CHORD_JOIN_ERROR', e);
+
+        }
+
+        rl.prompt();
+
+      })();
+      
+      break;
+
+    case 'info':
+
+      if (peer) {
+      
+        console.log(peer.toString());
+        
+      }
+
+      rl.prompt();
+      
+      break;
+     
+    case 'clear':
+
+      process.stdout.write('\033c');
+      
+      rl.prompt();
+
+      break;
+
+    case 'quit':
+
+      if (peer) {
+      
+        peer.shutdown();
+        
+      }
+
+      process.exit(0);
+
+      break;
+
+    case 'help':
+
+      printHelp();
+
+      rl.prompt();
+
+      break;
+
+    default: 
+
+      console.log('CHORD_INVALID_COMMAND');
+
+      printHelp();
+
+      rl.prompt();
+
+      break;
+  
+  }
+
+});
+rl.on('close', () => {
+  process.exit(0);
+});
+
+if (argv._.length) rl.write(process.argv.slice(2).join(' ') + '\n');
+

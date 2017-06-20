@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+service chord {
+  rpc getPredecessor (Z) returns (Z) {}
+  rpc getSuccessor (Z) returns (Z) {}
+  rpc findSuccessor (X) returns (Z) {}
+  rpc ping (Timestamp) returns (Timestamp) {}
+  rpc notify (Z) returns (Z) {}
+}
+
+message Timestamp {
+  int64 secs = 1;
+  int32 nans = 2;
+}
+
+message X {
+  bytes hash = 1;
+}
+
+message Y {
+  bytes hash = 1;
+  bytes val = 2;
+}
+
+message Z {
+  string addr = 1;
+}

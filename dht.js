@@ -2,121 +2,99 @@ const ip = require('ip');
 const grpc = require('grpc');
 const crypto = require('crypto');
 const buffer = require('buffer').Buffer;
-
+const PROTO_PATH = __dirname + '/chord.proto';
 
 /**
- * Return a new client/stub instance for the address
- * @param {String} address in compact IP-address/port notation
- * @return {Client} client
+ *
  */
-function startRpcClient (address) {
-  
-  const PROTO_PATH = __dirname + '/drpc.proto';
+function connect (addr) {
 
-  const drpc = grpc.load(PROTO_PATH).drpc;
+  const chordRPC = grpc.load(PROTO_PATH).chord;
 
-  return new drpc(address, grpc.credentials.createInsecure());
+  return new chordRPC(addr, grpc.credentials.createInsecure());
 
 }
 
 /**
- * 
- * @param {Client} client
- * 
+ *
  */
-function stopRpcClient (client) {
+function disconnect (client) {
 
   grpc.closeClient(client);
 
 }
 
-function startRpcServer (address, api) {
+/**
+ *
+ */
+function listen (addr, api) {
 
-  const PROTO_PATH = __dirname + '/drpc.proto';
 
-  const drpc = grpc.load(PROTO_PATH).drpc;
+  const chordRPC = grpc.load(PROTO_PATH).chord;
 
   var server = new grpc.Server();
   
-  server.addService(drpc.service, api);
+  server.addService(chordRPC.service, api);
   
-  server.bind(address, grpc.ServerCredentials.createInsecure());
+  server.bind(addr, grpc.ServerCredentials.createInsecure());
 
   server.start();
-
-  console.log(`LISTEN ${address} (${toSha1(address).toString('hex')})`);
 
   return server;
 
 }
 
-function stopRpcServer(server, callback) {
+/**
+ *
+ */
+function isAddress (addr) {
 
-  server.tryShutdown(callback);
+  addr = (typeof addr === 'string') ? addr : '';
+
+  var [ip4, port] = addr.trim().split(':');
+
+  port = parseInt(port);
+
+  return !!port && (1 <= port) && (port <= 65535) && ip.isV4Format(ip4);
 
 }
 
 /**
- * Return whether an address is valid
- * @param {String} address in compact IP-address/port notation
- * @return {Boolean} the result of validation
+ *
  */
-function validateAddress (address) {
-
-  address = (typeof address === 'string') ? address : '';
-
-  var [ip4, port] = address.trim().split(':');
-
-  return !!port && (1 <= parseInt(port) <= 65535) && ip.isV4Format(ip4);
-
-}
-
-/**
- * Return a buffer sha1 hash of supplied value
- * @param {_} value
- * @return {Buffer} the sha1 buffer
- */
-function toSha1 (value) {
+function toSha1 (val) {
   
-  return crypto.createHash('sha1').update(value).digest();
+  return crypto.createHash('sha1').update(val).digest();
 
 }
 
 /**
- * Return a high-res time pair relative to arbitrary pair last
- * @param {Array} relative time pair
- * @return {Object} the high-res difference between now and then
+ *
  */
 function getTime (relative) {
 
   var [s, n] = process.hrtime(relative);
   
-  return {seconds: s, nanos: n};
+  return { secs: s, nans: n };
+
 
 }
-
 /**
- * Return whether keyhash is in (lower, upper]
- * @param {EventEmitter} call Call object for the handler to process
- * @param {function(Error, feature)} callback Response callback
+ *
  */
-function isBucket (el, lower, upper) {
+function between (el, lwr, upr, uprIncl = false) {
 
   // lower before upper
-  if (lower.compare(upper) < 0) {
+  if (lwr.compare(upr) < 0) {
 
-    // lower before el AND el before/at upper
-    return lower.compare(el) < 0 && el.compare(upper) <= 0;
+    // lower before hash AND hash before/at upper
+    return (lwr.compare(el) < 0 && el.compare(upr) < 0) || (uprIncl && el.compare(upr) === 0);
 
   // upper before lower
   } else {
 
-    // lower before el OR el before/at upper
-    return lower.compare(el) < 0 || el.compare(upper) <= 0;
-
-    // BUG
-    // strange case when single node network as all key hashes map to that bucket
-    // how do they migrate to correct bucket when it joins the network?
+    // lower before hash OR hash before/at upper
+    return (lwr.compare(el) < 0) || (el.compare(upr) < 0) || (uprIncl && el.compare(upr) === 0);
 
   }
 
@@ -124,302 +102,284 @@ function isBucket (el, lower, upper) {
 
 /**
  *
- * @param {EventEmitter} call Call object for the handler to process
- *
  */
-function handlePing (call, callback) {
+function onPing (call, cb) {
 
-  callback(null, call.request);
+  cb(null, call.request);
 
 }
 
 /**
- * lookup request handler. Gets a request with a ipHash, and responds with a
- * LookupResponse object indicating whether there is a bucket for that key.
- * @param {EventEmitter} call Call object for the handler to process
- * @param {function(Error, feature)} callback Response callback
+ *
  */
-function handleLookup (call, callback) {
+function onGetPredecessor (call, cb) {
 
-  var targetHash = call.request.hash;
+  var pAddr = (this.pAddr != null) ? this.pAddr : '\0';
 
-  var addressHash = toSha1(this.address);
+  cb(null, { addr: pAddr });
 
-  var successorHash = toSha1(this.successorAddress);
+}
+
+/**
+ *
+ */
+function onGetSuccessor (call, cb) {
+
+  cb(null, { addr: this.sAddr });
+
+}
+
+/**
+ *
+ */
+async function onFindSuccessor (call, cb) {
+
+  var hash = call.request.hash;
 
   // BUG
   // strange case when target bucket is local one
   // has to make round trip
 
   // check whether key hash is in peer's bucket
-  if (isBucket(targetHash, addressHash, successorHash)) {
+  if (between(hash, this._idHash, toSha1(this.sAddr), true)) {
 
     // notify client of the bucket address
-    callback(null, { address: this.successorAddress });
+    cb(null, { addr: this.sAddr });
 
   // forward the lookup to the peer
   } else {
 
-    var peer = startRpcClient(this.successorAddress);
+    try {
 
-    // client will close connection
-    peer.lookup(targetHash, callback);
+     var s = await this.lookup(this.sAddr, hash);
 
-  }
+     cb(null, s);
 
-}
-
-/**
- * 
- * @param {EventEmitter} call Call object for the handler to process
- * @param {function(Error, feature)} callback Response callback
- */
-function handleGet (call, callback) {
-
-
-  var keyHash = call.request.hash;
-
-  // NOTE
-  // always get because non destructive
-
-  if (this.storage.hasOwnProperty(keyHash.toString('hex'))) {
-
-    callback(null, { hash: keyHash, value: this.storage[keyHash.toString('hex')] });
-  
-  } else {
-  
-    callback(new Error('Invalid key'));
-  
-  }
-
-}
-
-/**
- * 
- * @param {EventEmitter} call Call object for the handler to process
- * @param {function(Error, feature)} callback Response callback
- */
-function handleSet (call, callback) {
-
-  var keyHash = call.request.hash;
-
-  // TODO
-  // only set if valid_keyhash for this bucket because destructive
-  // but this comes at perf cost or storage cost for storing pred_peer
-  // has to be some error to check
-
-  this.storage[keyHash.toString('hex')] = call.request.value;
-  
-  callback(null, { hash: keyHash });
-
-}
-
-/**
- * private
- * @param {String} address 
- * @param {Buffer} hash
- * @param {function(Error, Object)} callback
- */
-function findSuccessor (address, hash, cb) {
-
-  if (!validateAddress(address)) {
-    throw new Error('Invalid IP-address/port: ' + address);
-  }
-
-  if (typeof cb != 'function') cb = () => {};
-
-  var peer = startRpcClient(address);
-
-  peer.lookup({ hash }, (err, res) => {
+    } catch (e) {
     
-    stopRpcClient(peer);
-    
-    cb(err, res);
-
-  });
-
-}
-
-/**
- * 
- * @param {Number} port
- */
-function Peer (port) {
-
-  this.address = ip.address() + ':' + port;
-
-  if (!validateAddress(this.address)) {
-    throw new Error('Invalid IP-address/port');
-  }
-
-  // point to self
-  this.successorAddress = this.address;
-
-  this.server = startRpcServer(this.address, {
-    ping: handlePing.bind(this),
-    lookup: handleLookup.bind(this),
-    get: handleGet.bind(this),
-    set: handleSet.bind(this)
-  });
-
-  this.storage = {};
-
-}
-
-/**
- * 
- * @param {String} address
- */
-Peer.prototype.ping = function (address, cb) {
-
-  if (!validateAddress(address)) {
-    throw new Error('Invalid IP-address/port: ' + address);
-  }
-
-  if (typeof cb != 'function') cb = () => {};
-
-  var peer = startRpcClient(address);
-
-  peer.ping(getTime(), (err, res) => {
-
-      var timeDif = getTime([res.seconds, res.nanos]);
-
-      console.log(`PING ${address} (${toSha1(address).toString('hex')}) ${(timeDif.nanos / 1e6).toPrecision(3)} ms`);
-
-      stopRpcClient(peer);
-
-      cb(err, res);
-
-
-  });
-
-}
-
-/**
- * 
- * @param {String} peerAddress 
- */
-Peer.prototype.join = function (address, cb) {
-
-  if (!validateAddress(address)) {
-    throw new Error('Invalid IP-address/port: ' + address);
-  }
-
-  if (typeof cb != 'function') cb = () => {};
-
-  var peer = startRpcClient(address);
-
-  var hash = toSha1(this.address);
-
-  peer.lookup({ hash }, (err, res) => {
-
-    if (err) {
-
-      cb(err);
-    
-    } else {
-
-      this.successorAddress = res.address;
-
-      stopRpcClient(peer);
-
-      cb(err, res);
+      cb(e);
 
     }
 
-  });
+  }
 
 }
 
 /**
- * 
- * @param {Buffer} keyHash
- * @param {function(Error, Object)} callback
+ *
  */
-Peer.prototype.get = function (key, cb) {
+function onNotify (call, cb) {
 
-  var hash = toSha1(key);
+  var addr = call.request.addr;
 
-  if (typeof cb != 'function') cb = () => {};
+  if (this.pAddr === null || between(toSha1(addr), toSha1(this.pAddr), this._idHash)) {
 
-  findSuccessor(this.address, hash, (err, res) => {
+    this.pAddr = addr;
 
-    if (err) {
-      
-      cb(err);
+  }
 
-    } else {
+  cb(null, { addr: this.pAddr });
 
-      var peer = startRpcClient(res.address);
+}
 
-      peer.get({ hash }, (err, res) => {
-    
-        stopRpcClient(peer);
-        
-        cb(err, res);
+class Peer {
+
+  /**
+   *
+   */
+  constructor (port) {
+
+    this.addr = ip.address() + ':' + port;
+
+    if (!isAddress(this.addr)) {
+      throw new Error('Invalid IP-address/port');
+    }
+
+    this._idHash = toSha1(this.addr);
+    this.id = this._idHash.toString('hex');
+
+    this.pAddr = null; // predecessor address
+    this.sAddr = this.addr; // successor address
+
+    this.server = listen(this.addr, {
+      ping: onPing.bind(this),
+      getPredecessor: onGetPredecessor.bind(this),
+      getSuccessor: onGetPredecessor.bind(this),
+      findSuccessor: onFindSuccessor.bind(this),
+      notify: onNotify.bind(this)
+    });
+
+    // TODO NOTE
+    // in constructor for a reason
+    this.timeout = setInterval(this.stabilize.bind(this), 5000);
+
+    this.storage = {};
+
+  }
+
+  /**
+   *
+   */
+  ping (addr) {
+
+    if (!isAddress(addr)) {
+      throw new Error('Invalid IP-address/port: ' + addr);
+    }
+
+    var client = connect(addr);  
+
+    return new Promise((resolve, reject) => {
+
+      client.ping(getTime(), (err, res) => {
+
+        disconnect(client);
+
+        if (err) reject(err);
+
+        else {
+          
+          res.dif = getTime([res.secs, res.nans]);
+          
+          resolve(res);
+
+        }
 
       });
 
+    });
+
+  }
+
+  /**
+   *
+   */
+  lookup (addr, hash) {
+
+    if (!isAddress(addr)) {
+      throw new Error('Invalid IP-address/port: ' + addr);
     }
 
-  });
+    if (!buffer.isBuffer(hash)) {
+      throw new TypeError('Invalid hash type');
+    }
 
-}
+    var client = connect(addr);
 
-/**
- * 
- * @param {Buffer} keyHash 
- * @param {Buffer} value
- * @param {function(Error)} callback
- */
-Peer.prototype.set = function (key, val, cb) {
+    return new Promise((resolve, reject) => {
 
-  var hash = toSha1(key);
-
-  if (typeof cb != 'function') cb = () => {};
-
-  findSuccessor(this.address, hash, (err, res) => {
-
-    if (err) {
-      
-      cb(err);
-
-    } else {
-
-      var peer = startRpcClient(res.address);
-
-      peer.set({ hash, value: buffer.from(val) }, (err, res) => {
-    
-        stopRpcClient(peer);
+      client.findSuccessor({ hash }, (err, res) => {
         
-        cb(err, res);
+        disconnect(client);
+
+        if (err) reject(err);
+        
+        else resolve(res);
 
       });
 
-    }
+    });
 
-  });
-
-}
-
-Peer.prototype.dump = function (cb) {
-
-  if (typeof cb != 'function') cb = () => {};
-
-  var address = this.address;
-  var addressHash = toSha1(address).toString('hex');
-
-  var successorAddress = this.successorAddress;
-  var successorHash = toSha1(successorAddress).toString('hex');
-
-  console.log(`SELF ${address} (${addressHash})\n`+
-              `PEER ${successorAddress} (${successorHash})`);
-
-  for (var prop in this.storage) {
-    console.log(`DATA ${prop}: ${this.storage[prop]}`);
   }
 
-  cb(null);
+  /**
+   *
+   */
+  async join (addr) {
+
+    if (!isAddress(addr)) {
+      throw new Error('Invalid IP-address/port: ' + addr);
+    }
+
+    var suc;
+
+    try {
+
+      suc = await this.lookup(addr, this._idHash);
+
+      this.pAddr = null;
+      
+      this.sAddr = suc.addr;
+    
+    } catch (e) {
+    
+      console.log("lookup error", e);
+
+      process.exit(1);
+
+    }
+
+    return suc;
+
+  }
+
+  /**
+   *
+   */
+  async stabilize () {
+
+    try {
+
+      // update successor
+
+      var successor = connect(this.sAddr);
+
+      successor.getPredecessor({ addr: this.addr }, (err, res) => {
+        
+        var sIdHash = toSha1(this.sAddr);
+
+        if (between(toSha1(res.addr), this._idHash, sIdHash)) {
+
+          // pAddr just joined the network
+          this.sAddr = res.addr;
+
+        }
+
+      });
+
+      // update successor's predecessor
+
+      successor.notify({ addr: this.addr }, (err, res) => {
+        
+        disconnect(successor);
+
+      });
+
+
+    } catch (e) {
+    
+      console.log("lookup error", e);
+
+      process.exit(1);
+
+    }
+
+  }
+
+  /**
+   *
+   */
+  shutdown (cb) {
+    
+    this.server.tryShutdown(cb);
+
+  }
+
+  /**
+   *
+   */
+  toString () {
+
+    var str = `PRED ${this.pAddr} (${this.pAddr != null ? toSha1(this.pAddr).toString('hex') : undefined})\n` +
+              `SELF ${this.addr} (${this.id})\n` +
+              `SUCC ${this.sAddr} (${toSha1(this.sAddr).toString('hex')})`;
+
+    for (var hash in this.storage) {
+      str += `DATA ${hash}: ${this.storage[hash]}\n`;
+    }
+
+    return str;
+
+  }
 
 }
 
