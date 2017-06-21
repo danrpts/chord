@@ -1,5 +1,6 @@
 const minimist = require('minimist');
 const readline = require('readline');
+const getPort = require('get-port');
 const dht = require('./dht.js');
 
 function printUsage () {
@@ -9,13 +10,14 @@ function printUsage () {
 
 function printHelp () {
   console.log('Commands are:\n\n',
-              'on [-p <port>]              Enable this node\n',
-              'off                         Disable this node\n',
+              'create [-p <port>]          Initialize this node\n',
+              'echo <address> [arg ...]    Output to remote node\n',
               'ping <address>              Ping remote node\n',
               'join <address>              Add this node to a network\n',
               'leave                       Remove this node from network\n',
               'get <key>                   Find value in network\n',
               'set <key> <value>           Update key in network\n',
+              'info                        Output info about this node\n',
               'clear                       Clear the terminal screen\n',
               'quit                        Exit shell immediately\n',
               'help                        Display command help');
@@ -29,20 +31,32 @@ function printHelp () {
 var argv = minimist(process.argv.slice(2));
 
 if (argv.version) {
+
   console.log(require('./package.json').version);
+  
   process.exit(0);
+
 } else if (argv.help) {
+
   printUsage();
+
   printHelp();
+
   process.exit(0);
+
 }
 
 // begin cli
 var peer = null;
+
 const rl = readline.createInterface({
+
   input: process.stdin,
+
   output: process.stdout,
+
   prompt: "chord> "
+
 });
 
 rl.prompt();
@@ -50,108 +64,264 @@ rl.prompt();
 rl.on('line', (line) => {
 
   if (!line) {
+
     rl.prompt();
+
     return;
+
   }
 
-  var [cmd, ...args] = line.trim().split(' ');
+  let [cmd, ...args] = line.trim().split(' ');
 
   // TODO
   // handle empty line
 
   switch (cmd) {
 
-    case 'on':
+    case 'create':
+
+      var port = args.p;
 
       args = minimist(args);
 
-      var port = parseInt(args.p);
+      (async () => {
 
-      if (!args.p) {
+        if (peer) {
 
-        printHelp();
+            try {
+              
+              var res = await peer.shutdown();
+
+              console.log(`DOWN ${res.addr} (${res.id})`);
+
+              peer = undefined;
+
+            } catch (err) {
+
+              console.log('shutdown', err);
+
+            }
+
+        }
+
+        try {
+
+          port = await getPort(port);
+
+          peer = new dht.Peer(port);
+
+          peer.on('echo', res => {
+
+            console.log(`\n${res.addr}> ${res.msg}`);
+
+            rl.prompt();
+
+          });
+
+          console.log(`UP ${peer.addr} (${peer.id})`);
+
+
+        } catch (err) {
+
+          console.log ('getPort', err);
+
+        }
 
         rl.prompt();
 
-        return;
+      })();
 
-      // TODO
-      // check what GRPC uses as transport protocol
-      // and if allowable lower port space
-      // user supplied port (create node)
-      } else if (1024 > port || port > 65535) {
+      break;
 
-        console.log('CHORD_INVALID_PORT');
+    case 'echo': 
 
-        rl.prompt();
+     if (!peer) {
 
-        return;
+        console.log('node uninitialized');
 
-      }
-        
-      peer = new dht.Peer(port);
+      } else {
+      
+        var addr = args[0];
 
-      console.log(`UP ${peer.addr} (${peer.id})`);
+        peer.echo(addr, args.slice(1).join(' '));  
+
+      }   
 
       rl.prompt();
 
       break;
 
     case 'ping':
+
+      if (!peer) {
+
+        console.log('node uninitialized');
       
-      var addr = args[0];
-      
-      (async () => {
-
-        var t;
-
-        try {
-        
-          t = await peer.ping(addr);
-        
-          console.log(`PING ${addr} ${(t.dif.nans / 1e6).toPrecision(3)} ms`);
-        
-        } catch (e) {
-          
-          console.log('CHORD_PING_ERROR', e);
-
-        }
-
         rl.prompt();
 
-      })();
+      } else {
+      
+        var addr = args[0];
+        
+        (async () => {
+
+          try {
+          
+            var res = await peer.ping(addr);
+          
+            console.log(`PING ${addr} ${(res.dif.nans / 1e6).toPrecision(3)} ms`);
+          
+          } catch (err) {
+
+            console.log('ping', err);
+
+          }
+
+          rl.prompt();
+
+        })();
+
+      }
 
       break;
 
     case 'join':
-      
-      var addr = args[0];
-      
-      (async () => {
 
-        var succ;
+      if (!peer) {
 
-        try {
-        
-          succ = await peer.join(addr);
-        
-          console.log(`JOIN ${succ.addr}`);
-        
-        } catch (e) {
-          
-          console.log('CHORD_JOIN_ERROR', e);
-
-        }
+        console.log('node uninitialized');
 
         rl.prompt();
 
-      })();
+      } else {
+        
+        (async () => {
+
+          try {
+          
+            var res = await peer.join(args[0]);
+          
+            console.log(`JOIN ${res.addr}`);
+          
+          } catch (err) {
+            
+            console.log('join', err);
+
+          }
+
+          rl.prompt();
+
+        })();
+
+      }
+      
+      break;
+
+    case 'leave':
+
+      if (!peer) {
+
+        console.log('node uninitialized');
+
+        rl.prompt();
+
+      } else {
+
+        (async () => {
+
+          try {
+            
+            var res = await peer.shutdown();
+
+            console.log(`DOWN ${res.addr} (${res.id})`);
+
+            peer = undefined;
+
+          } catch (err) {
+
+            console.log('leave', err);
+
+          }
+
+          rl.prompt();
+
+        })();
+
+      }
+
+      break;
+
+    case 'get':
+
+      if (!peer) {
+
+        console.log('node uninitialized');
+
+        rl.prompt();
+
+      } else {
+              
+        (async () => {
+
+          try {
+          
+            var res = await peer.get(args[0]);
+
+            console.log(`GET ${args[0]}: ${res.val}`);
+          
+          } catch (err) {
+            
+            console.log('get', err);
+
+          }
+
+          rl.prompt();
+
+        })();
+
+      }
+
+      break;
+
+    case 'set':
+
+      if (!peer) {
+
+        console.log('node uninitialized');
+
+        rl.prompt();
+
+      } else {
+        
+        (async () => {
+
+          try {
+          
+            var res = await peer.set(args[0], args[1]);
+          
+            console.log(`SET ${res.hash.toString('hex')}: ${args[1]}`);
+          
+          } catch (err) {
+            
+            console.log('set', err);
+
+          }
+
+          rl.prompt();
+
+        })();
+
+      }
       
       break;
 
     case 'info':
 
-      if (peer) {
+      if (!peer) {
+
+        console.log('node uninitialized');
+
+      } else {
       
         console.log(peer.toString());
         
@@ -171,13 +341,35 @@ rl.on('line', (line) => {
 
     case 'quit':
 
-      if (peer) {
-      
-        peer.shutdown();
-        
-      }
+      if (!peer) {
 
-      process.exit(0);
+        console.log('node uninitialized');
+
+        process.exit(0);
+
+      } else {
+
+        (async () => {
+
+          try {
+            
+            var res = await peer.shutdown();
+
+            console.log(`DOWN ${res.addr} (${res.id})`);
+
+            peer = undefined;
+
+          } catch (err) {
+
+            console.log('shutdown', err);
+
+          }
+
+          process.exit(0);
+
+        })();
+
+      }
 
       break;
 
@@ -191,8 +383,6 @@ rl.on('line', (line) => {
 
     default: 
 
-      console.log('CHORD_INVALID_COMMAND');
-
       printHelp();
 
       rl.prompt();
@@ -202,8 +392,11 @@ rl.on('line', (line) => {
   }
 
 });
+
 rl.on('close', () => {
+  
   process.exit(0);
+
 });
 
 if (argv._.length) rl.write(process.argv.slice(2).join(' ') + '\n');

@@ -1,26 +1,51 @@
 const ip = require('ip');
 const grpc = require('grpc');
 const crypto = require('crypto');
-const buffer = require('buffer').Buffer;
-const PROTO_PATH = __dirname + '/chord.proto';
+const EventEmitter = require('events').EventEmitter;
+const Buffer = require('buffer').Buffer;
+const chordRPC = grpc.load(__dirname + '/chord.proto').chordRPC;
 
 /**
  *
  */
-function connect (addr) {
+function isAddress (addr) {
 
-  const chordRPC = grpc.load(PROTO_PATH).chord;
+  addr = (typeof addr === 'string') ? addr : '';
 
-  return new chordRPC(addr, grpc.credentials.createInsecure());
+  var [ip4, port] = addr.trim().split(':');
+
+  port = parseInt(port);
+
+  return !!port && 1024 <= port && port <= 65536 && ip.isV4Format(ip4);
 
 }
 
 /**
  *
  */
-function disconnect (client) {
+function call (addr, method, req) {
 
-  grpc.closeClient(client);
+  if (!isAddress(addr)) {
+    return new Error('"addr" argument must be compact IP-address:port');
+  }
+
+  req = req || {};
+
+  var client = new chordRPC(addr, grpc.credentials.createInsecure());
+
+  return new Promise((resolve, reject) => {
+
+    client[method](req, (err, res) => {
+
+      if (err) reject(err);
+
+      else resolve(res);
+
+      grpc.closeClient(client);
+
+    });
+
+  });
 
 }
 
@@ -29,8 +54,9 @@ function disconnect (client) {
  */
 function listen (addr, api) {
 
-
-  const chordRPC = grpc.load(PROTO_PATH).chord;
+  if (!isAddress(addr)) {
+    return new Error('"addr" argument must be compact IP-address:port');
+  }
 
   var server = new grpc.Server();
   
@@ -47,21 +73,6 @@ function listen (addr, api) {
 /**
  *
  */
-function isAddress (addr) {
-
-  addr = (typeof addr === 'string') ? addr : '';
-
-  var [ip4, port] = addr.trim().split(':');
-
-  port = parseInt(port);
-
-  return !!port && (1 <= port) && (port <= 65535) && ip.isV4Format(ip4);
-
-}
-
-/**
- *
- */
 function toSha1 (val) {
   
   return crypto.createHash('sha1').update(val).digest();
@@ -71,30 +82,23 @@ function toSha1 (val) {
 /**
  *
  */
-function getTime (relative) {
-
-  var [s, n] = process.hrtime(relative);
-  
-  return { secs: s, nans: n };
-
-
-}
-/**
- *
- */
-function between (el, lwr, upr, uprIncl = false) {
+function between (el, lwr, upr, lwrIcl = false, uprIcl = false) {
 
   // lower before upper
   if (lwr.compare(upr) < 0) {
 
     // lower before hash AND hash before/at upper
-    return (lwr.compare(el) < 0 && el.compare(upr) < 0) || (uprIncl && el.compare(upr) === 0);
+    return (lwr.compare(el) < 0 && el.compare(upr) < 0) 
+        || (lwrIcl && lwr.compare(el) === 0) 
+        || (uprIcl && el.compare(upr) === 0);
 
   // upper before lower
   } else {
 
     // lower before hash OR hash before/at upper
-    return (lwr.compare(el) < 0) || (el.compare(upr) < 0) || (uprIncl && el.compare(upr) === 0);
+    return (lwr.compare(el) < 0) || (el.compare(upr) < 0) 
+        || (lwrIcl && lwr.compare(el) === 0) 
+        || (uprIcl && el.compare(upr) === 0);
 
   }
 
@@ -103,7 +107,18 @@ function between (el, lwr, upr, uprIncl = false) {
 /**
  *
  */
-function onPing (call, cb) {
+function onEchoPeer (call, cb) {
+
+  this.emit('echo', call.request);
+
+  cb(null);
+
+}
+
+/**
+ *
+ */
+function onPingPeer (call, cb) {
 
   cb(null, call.request);
 
@@ -114,9 +129,13 @@ function onPing (call, cb) {
  */
 function onGetPredecessor (call, cb) {
 
-  var pAddr = (this.pAddr != null) ? this.pAddr : '\0';
+  var res = {};
 
-  cb(null, { addr: pAddr });
+  if (this.pAddr != null) {
+    res.addr = this.pAddr;
+  }
+
+  cb(null, res);
 
 }
 
@@ -125,7 +144,13 @@ function onGetPredecessor (call, cb) {
  */
 function onGetSuccessor (call, cb) {
 
-  cb(null, { addr: this.sAddr });
+  var res = {};
+
+  if (this.sAddr != null) {
+    res.addr = this.sAddr;
+  }
+
+  cb(null, res);
 
 }
 
@@ -141,7 +166,7 @@ async function onFindSuccessor (call, cb) {
   // has to make round trip
 
   // check whether key hash is in peer's bucket
-  if (between(hash, this._idHash, toSha1(this.sAddr), true)) {
+  if (between(hash, this._idHash, toSha1(this.sAddr), false, true)) {
 
     // notify client of the bucket address
     cb(null, { addr: this.sAddr });
@@ -151,13 +176,13 @@ async function onFindSuccessor (call, cb) {
 
     try {
 
-     var s = await this.lookup(this.sAddr, hash);
+     var res = await call(this.sAddr, 'findSuccessor', { hash });
 
-     cb(null, s);
+     cb(null, res);
 
-    } catch (e) {
+    } catch (err) {
     
-      cb(e);
+      cb(err);
 
     }
 
@@ -168,45 +193,109 @@ async function onFindSuccessor (call, cb) {
 /**
  *
  */
-function onNotify (call, cb) {
+function onNotifySuccessor (call, cb) {
 
   var addr = call.request.addr;
 
   if (this.pAddr === null || between(toSha1(addr), toSha1(this.pAddr), this._idHash)) {
-
     this.pAddr = addr;
-
   }
 
-  cb(null, { addr: this.pAddr });
+  cb(null);
 
 }
 
-class Peer {
+/**
+ *
+ */
+function onGetKey (call, cb) {
+
+  var hash = call.request.hash;
+
+  var hashStr = hash.toString('hex');
+
+  if (this.storage.hasOwnProperty(hashStr)) {
+
+    cb(null, { hash, val: this.storage[hashStr]}); 
+
+  } else {
+
+    cb(new Error('invalid key'));
+
+  }
+
+}
+
+/**
+ *
+ */
+function onSetKey (call, cb) {
+
+  var hash = call.request.hash;
+  var hashStr = hash.toString('hex');
+  var val = call.request.val;
+
+  this.storage[hashStr] = val;
+
+  // TODO
+  // handle some error here
+
+  cb(null, { hash, val}); 
+
+}
+
+/**
+ *
+ */
+function onMovekey (call, cb) {
+
+  var hashStr = call.request.hash.toString('hex');
+
+  this.storage[hashStr] = call.request.val;
+
+  cb(null, call.request); 
+
+}
+
+class Peer extends EventEmitter {
 
   /**
    *
    */
   constructor (port) {
 
+    super();
+
     this.addr = ip.address() + ':' + port;
 
-    if (!isAddress(this.addr)) {
-      throw new Error('Invalid IP-address/port');
-    }
-
     this._idHash = toSha1(this.addr);
+    
     this.id = this._idHash.toString('hex');
 
     this.pAddr = null; // predecessor address
+    
     this.sAddr = this.addr; // successor address
 
     this.server = listen(this.addr, {
-      ping: onPing.bind(this),
+
+      echoPeer: onEchoPeer.bind(this),
+    
+      pingPeer: onPingPeer.bind(this),
+    
       getPredecessor: onGetPredecessor.bind(this),
+    
       getSuccessor: onGetPredecessor.bind(this),
+    
       findSuccessor: onFindSuccessor.bind(this),
-      notify: onNotify.bind(this)
+    
+      notifySuccessor: onNotifySuccessor.bind(this),
+    
+      getKey: onGetKey.bind(this),
+
+      setKey: onSetKey.bind(this),
+
+      moveKey: onMovekey.bind(this)
+    
     });
 
     // TODO NOTE
@@ -220,64 +309,52 @@ class Peer {
   /**
    *
    */
-  ping (addr) {
+  async echo (addr, msg) {
 
-    if (!isAddress(addr)) {
-      throw new Error('Invalid IP-address/port: ' + addr);
+    var res;
+
+    try {
+
+      res = await call(addr, 'echoPeer', { msg, addr: this.addr });
+
+    } catch (err) {
+
+      console.log('echoPeer', err);
+
     }
 
-    var client = connect(addr);  
-
-    return new Promise((resolve, reject) => {
-
-      client.ping(getTime(), (err, res) => {
-
-        disconnect(client);
-
-        if (err) reject(err);
-
-        else {
-          
-          res.dif = getTime([res.secs, res.nans]);
-          
-          resolve(res);
-
-        }
-
-      });
-
-    });
+    return res;
 
   }
 
   /**
    *
    */
-  lookup (addr, hash) {
+  async ping (addr) {
 
-    if (!isAddress(addr)) {
-      throw new Error('Invalid IP-address/port: ' + addr);
+    var res;
+
+    function hrtimeObj (rel) {
+
+      var [secs, nans] = process.hrtime(rel);
+  
+      return { secs, nans };
+
     }
 
-    if (!buffer.isBuffer(hash)) {
-      throw new TypeError('Invalid hash type');
+    try {
+
+      res = await call(addr, 'pingPeer', hrtimeObj());
+
+      res.dif = hrtimeObj([res.secs, res.nans]);
+
+    } catch (err) {
+
+      console.log('pingPeer', err);
+
     }
 
-    var client = connect(addr);
-
-    return new Promise((resolve, reject) => {
-
-      client.findSuccessor({ hash }, (err, res) => {
-        
-        disconnect(client);
-
-        if (err) reject(err);
-        
-        else resolve(res);
-
-      });
-
-    });
+    return res;
 
   }
 
@@ -286,29 +363,23 @@ class Peer {
    */
   async join (addr) {
 
-    if (!isAddress(addr)) {
-      throw new Error('Invalid IP-address/port: ' + addr);
-    }
-
-    var suc;
+    var res;
 
     try {
 
-      suc = await this.lookup(addr, this._idHash);
+      res = await call(addr, 'findSuccessor', { hash: this._idHash });
 
       this.pAddr = null;
       
-      this.sAddr = suc.addr;
+      this.sAddr = res.addr;
     
-    } catch (e) {
+    } catch (err) {
     
-      console.log("lookup error", e);
-
-      process.exit(1);
+      console.log("findSuccessor", err);
 
     }
 
-    return suc;
+    return res;
 
   }
 
@@ -317,50 +388,129 @@ class Peer {
    */
   async stabilize () {
 
+    var res;
+
     try {
 
       // update successor
+      res = await call(this.sAddr, 'getPredecessor');
 
-      var successor = connect(this.sAddr);
+      if (res.addr != '' && between(toSha1(res.addr), this._idHash, toSha1(this.sAddr))) {
 
-      successor.getPredecessor({ addr: this.addr }, (err, res) => {
-        
-        var sIdHash = toSha1(this.sAddr);
+        // case res.addr just joined
+        this.sAddr = res.addr;
 
-        if (between(toSha1(res.addr), this._idHash, sIdHash)) {
+      }
 
-          // pAddr just joined the network
-          this.sAddr = res.addr;
-
-        }
-
-      });
-
-      // update successor's predecessor
-
-      successor.notify({ addr: this.addr }, (err, res) => {
-        
-        disconnect(successor);
-
-      });
-
-
-    } catch (e) {
+    } catch (err) {
     
-      console.log("lookup error", e);
-
-      process.exit(1);
+      console.log("getPredecessor", err);
 
     }
+
+    try {
+
+      // update successor's predecessor with self
+      res = await call(this.sAddr, 'notifySuccessor', { addr: this.addr });
+
+    } catch (err) {
+    
+      console.log("notifySuccessor", err);
+
+    }
+
+    return res;
 
   }
 
   /**
    *
    */
-  shutdown (cb) {
+  async get (key) {
+
+    var hash = toSha1(key);
+
+    var res;
+
+    try {
+
+      res = await call(this.addr, 'findSuccessor', { hash });
+
+    } catch (err) {
     
-    this.server.tryShutdown(cb);
+      console.log("findSuccessor", err);
+
+    }
+
+    try {
+
+      res = await call(res.addr, 'getKey', { hash });
+
+    } catch (err) {
+    
+      console.log("getKey", err);
+
+    }
+
+    return res;
+
+  }
+
+  /**
+   *
+   */
+  async set (key, val) {
+
+    var hash = toSha1(key);
+
+    var val = Buffer.from(val);
+
+    var res;
+
+    try {
+
+      res = await call(this.addr, 'findSuccessor', { hash });
+
+    } catch (err) {
+    
+      console.log("findSuccessor", err);
+
+    }
+
+    try {
+
+      res = await call(res.addr, 'setKey', { hash, val });
+
+    } catch (err) {
+    
+      console.log("setKey", err);
+
+    }
+
+    return res;
+
+  }
+
+  /**
+   *
+   */
+  shutdown () {
+
+    return new Promise((resolve, reject) => {
+
+      this.server.tryShutdown(() => {
+
+        // TODO check err and reject, do not clearInterval, etc.
+
+        clearInterval(this.timeout);
+
+        // TODO unbind all events
+
+        resolve({ addr: this.addr, id: this.id });
+
+      });  
+
+    });
 
   }
 
@@ -371,10 +521,10 @@ class Peer {
 
     var str = `PRED ${this.pAddr} (${this.pAddr != null ? toSha1(this.pAddr).toString('hex') : undefined})\n` +
               `SELF ${this.addr} (${this.id})\n` +
-              `SUCC ${this.sAddr} (${toSha1(this.sAddr).toString('hex')})`;
+              `SUCC ${this.sAddr} (${toSha1(this.sAddr).toString('hex')})\n`;
 
-    for (var hash in this.storage) {
-      str += `DATA ${hash}: ${this.storage[hash]}\n`;
+    for (var hashStr in this.storage) {
+      str += `DATA ${hashStr}: ${this.storage[hashStr].toString()}\n`;
     }
 
     return str;
