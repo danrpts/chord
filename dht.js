@@ -193,7 +193,7 @@ async function onFindSuccessor (call, cb) {
 /**
  *
  */
-function onNotifySuccessor (call, cb) {
+function onNotify (call, cb) {
 
   var addr = call.request.addr;
 
@@ -288,7 +288,7 @@ class Peer extends EventEmitter {
     
       findSuccessor: onFindSuccessor.bind(this),
     
-      notifySuccessor: onNotifySuccessor.bind(this),
+      notify: onNotify.bind(this),
     
       getKey: onGetKey.bind(this),
 
@@ -303,6 +303,9 @@ class Peer extends EventEmitter {
     this.timeout = setInterval(this.stabilize.bind(this), 5000);
 
     this.storage = {};
+
+    // m=160 records
+    this.fingers = [];
 
   }
 
@@ -349,8 +352,8 @@ class Peer extends EventEmitter {
       res.dif = hrtimeObj([res.secs, res.nans]);
 
     } catch (err) {
-
-      console.log('pingPeer', err);
+    
+      console.log("pingPeer", err);
 
     }
 
@@ -363,7 +366,7 @@ class Peer extends EventEmitter {
    */
   async join (addr) {
 
-    var res;
+    var res;  
 
     try {
 
@@ -372,7 +375,7 @@ class Peer extends EventEmitter {
       this.pAddr = null;
       
       this.sAddr = res.addr;
-    
+
     } catch (err) {
     
       console.log("findSuccessor", err);
@@ -388,12 +391,41 @@ class Peer extends EventEmitter {
    */
   async stabilize () {
 
-    var res;
-
+    // check predecessor
     try {
 
-      // update successor
-      res = await call(this.sAddr, 'getPredecessor');
+      await call(this.pAddr, 'pingPeer');
+
+    } catch (err) {
+
+      // fix predecessor
+      this.pAddr = null;
+
+    }
+
+    // fix fingers
+    // try {
+
+    //   this.next = this.next + 1;
+      
+    //   if (160 < this.next) {
+    //     this.next = 1;
+    //   }
+
+    //   let hash = this.addr + 2^(next - 1)
+
+    //   finger[next] = await call(this.sAddr, 'findSuccessor', { hash: });
+
+    // } catch (err) {
+
+    //   console.log()
+    
+    // }
+
+    // update successor
+    try {
+
+      let res = await call(this.sAddr, 'getPredecessor');
 
       if (res.addr != '' && between(toSha1(res.addr), this._idHash, toSha1(this.sAddr))) {
 
@@ -404,22 +436,26 @@ class Peer extends EventEmitter {
 
     } catch (err) {
     
-      console.log("getPredecessor", err);
+      // fix successor
+      this.sAddr = this.addr;
+
+      //console.log("getPredecessor", err);
 
     }
 
+    // update successor's predecessor
     try {
 
-      // update successor's predecessor with self
-      res = await call(this.sAddr, 'notifySuccessor', { addr: this.addr });
+      await call(this.sAddr, 'notify', { addr: this.addr });
 
     } catch (err) {
     
-      console.log("notifySuccessor", err);
+      // fix successor
+      this.sAddr = this.addr;
+
+      //console.log("notifySuccessor", err);
 
     }
-
-    return res;
 
   }
 
@@ -521,10 +557,10 @@ class Peer extends EventEmitter {
 
     var str = `PRED ${this.pAddr} (${this.pAddr != null ? toSha1(this.pAddr).toString('hex') : undefined})\n` +
               `SELF ${this.addr} (${this.id})\n` +
-              `SUCC ${this.sAddr} (${toSha1(this.sAddr).toString('hex')})\n`;
+              `SUCC ${this.sAddr} (${toSha1(this.sAddr).toString('hex')})`;
 
     for (var hashStr in this.storage) {
-      str += `DATA ${hashStr}: ${this.storage[hashStr].toString()}\n`;
+      str += `\nDATA ${hashStr}: ${this.storage[hashStr].toString()}`;
     }
 
     return str;

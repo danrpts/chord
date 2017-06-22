@@ -1,12 +1,12 @@
 syntax = "proto3";
 
 service chordRPC {
-  rpc echoPeer (echoPeerRequest) returns (Empty) {}
-  rpc pingPeer (B) returns (B) {}
-  rpc getPredecessor (Empty) returns (getPredecessorResponse) {}
-  rpc getSuccessor (Empty) returns (getSuccessorResponse) {}
+  rpc echoPeer (echoPeerRequest) returns (empty) {}
+  rpc pingPeer (timestamp) returns (timestamp) {}
+  rpc getPredecessor (empty) returns (getPredecessorResponse) {}
+  rpc getSuccessor (empty) returns (getSuccessorResponse) {}
   rpc findSuccessor (X) returns (Z) {}
-  rpc notifySuccessor (notifySuccessorRequest) returns (Empty) {}
+  rpc notify (notifyRequest) returns (empty) {}
   rpc getKey (X) returns (Y) {}
   rpc setKey (Y) returns (Y) {}
   rpc moveKey(Y) returns (Y) {} 
@@ -16,7 +16,7 @@ message A {
   string msg = 1;
 }
 
-message B {
+message timestamp {
   int64 secs = 1;
   int32 nans = 2;
 }
@@ -34,7 +34,7 @@ message Z {
   string addr = 1;
 }
 
-message Empty {}
+message empty {}
 
 message echoPeerRequest {
   string msg = 1;
@@ -49,6 +49,6 @@ message getSuccessorResponse {
   string addr = 1;
 }
 
-message notifySuccessorRequest {
+message notifyRequest {
   string addr = 1;
 }

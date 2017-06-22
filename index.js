@@ -16,7 +16,7 @@ function printHelp () {
               'join <address>              Add this node to a network\n',
               'leave                       Remove this node from network\n',
               'get <key>                   Find value in network\n',
-              'set <key> <value>           Update key in network\n',
+              'set <key> <val ...>         Update key in network\n',
               'info                        Output info about this node\n',
               'clear                       Clear the terminal screen\n',
               'quit                        Exit shell immediately\n',
@@ -165,17 +165,9 @@ rl.on('line', (line) => {
         
         (async () => {
 
-          try {
-          
-            var res = await peer.ping(addr);
-          
-            console.log(`PING ${addr} ${(res.dif.nans / 1e6).toPrecision(3)} ms`);
-          
-          } catch (err) {
-
-            console.log('ping', err);
-
-          }
+          var res = await peer.ping(addr);
+        
+          console.log(`PING ${addr} ${(res.dif.nans / 1e6).toPrecision(3)} ms`);          
 
           rl.prompt();
 
@@ -191,64 +183,22 @@ rl.on('line', (line) => {
 
         console.log('node uninitialized');
 
-        rl.prompt();
-
       } else {
         
-        (async () => {
-
-          try {
+        peer.join(args[0]);
           
-            var res = await peer.join(args[0]);
-          
-            console.log(`JOIN ${res.addr}`);
-          
-          } catch (err) {
-            
-            console.log('join', err);
-
-          }
-
-          rl.prompt();
-
-        })();
-
       }
+
+      rl.prompt();
       
       break;
 
     case 'leave':
 
-      if (!peer) {
+      // TODO
 
-        console.log('node uninitialized');
-
-        rl.prompt();
-
-      } else {
-
-        (async () => {
-
-          try {
-            
-            var res = await peer.shutdown();
-
-            console.log(`DOWN ${res.addr} (${res.id})`);
-
-            peer = undefined;
-
-          } catch (err) {
-
-            console.log('leave', err);
-
-          }
-
-          rl.prompt();
-
-        })();
-
-      }
-
+      rl.prompt();
+      
       break;
 
     case 'get':
@@ -262,19 +212,11 @@ rl.on('line', (line) => {
       } else {
               
         (async () => {
-
-          try {
           
-            var res = await peer.get(args[0]);
+          var res = await peer.get(args[0]);
 
-            console.log(`GET ${args[0]}: ${res.val}`);
+          console.log(`${args[0]}: ${res.val}`);
           
-          } catch (err) {
-            
-            console.log('get', err);
-
-          }
-
           rl.prompt();
 
         })();
@@ -295,17 +237,11 @@ rl.on('line', (line) => {
         
         (async () => {
 
-          try {
-          
-            var res = await peer.set(args[0], args[1]);
-          
-            console.log(`SET ${res.hash.toString('hex')}: ${args[1]}`);
-          
-          } catch (err) {
-            
-            console.log('set', err);
+          var val = args.slice(1).join(' ');
 
-          }
+          var res = await peer.set(args[0], val);
+        
+          console.log(`${res.hash.toString('hex')}: ${val}`); 
 
           rl.prompt();
 
