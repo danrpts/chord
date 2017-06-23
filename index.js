@@ -17,7 +17,7 @@ function printHelp () {
               'leave                       Remove this node from network\n',
               'get <key>                   Find value in network\n',
               'set <key> <val ...>         Update key in network\n',
-              'info                        Output info about this node\n',
+              'info [--all]                Output info about this node\n',
               'clear                       Clear the terminal screen\n',
               'quit                        Exit shell immediately\n',
               'help                        Display command help');
@@ -55,7 +55,7 @@ const rl = readline.createInterface({
 
   output: process.stdout,
 
-  prompt: "chord> "
+  prompt: "# "
 
 });
 
@@ -94,13 +94,13 @@ rl.on('line', (line) => {
               
               var res = await peer.shutdown();
 
-              console.log(`DOWN ${res.addr} (${res.id})`);
+              console.log(`# DOWN ${res.addr} (${res.id})`);
 
               peer = undefined;
 
             } catch (err) {
 
-              console.log('shutdown', err);
+              console.log('create::shutdown', err);
 
             }
 
@@ -114,18 +114,18 @@ rl.on('line', (line) => {
 
           peer.on('echo', res => {
 
-            console.log(`\n${res.addr}> ${res.msg}`);
+            console.log(`\n# ${res.addr} -> ${res.msg}`);
 
             rl.prompt();
 
           });
 
-          console.log(`UP ${peer.addr} (${peer.id})`);
+          console.log(`# UP ${peer.addr} (${peer.id})`);
 
 
         } catch (err) {
 
-          console.log ('getPort', err);
+          console.log (err);
 
         }
 
@@ -145,7 +145,11 @@ rl.on('line', (line) => {
       
         var addr = args[0];
 
-        peer.echo(addr, args.slice(1).join(' '));  
+        var msg = args.slice(1).join(' ');
+
+        peer.echo(addr, msg);
+
+        console.log(`# ${addr} <- ${msg}`);
 
       }   
 
@@ -169,7 +173,7 @@ rl.on('line', (line) => {
 
           var res = await peer.ping(addr);
         
-          console.log(`PING ${addr} ${(res.dif.nans / 1e6).toPrecision(3)} ms`);          
+          console.log(`# PING ${addr} ${(res.dif.nans / 1e6).toPrecision(3)} ms`);          
 
           rl.prompt();
 
@@ -186,8 +190,10 @@ rl.on('line', (line) => {
         console.log('node uninitialized');
 
       } else {
+
+        args = minimist(args);
         
-        peer.join(args[0]);
+        peer.join(args._[0]);
           
       }
 
@@ -217,7 +223,7 @@ rl.on('line', (line) => {
           
           var res = await peer.get(args[0]);
 
-          console.log(`${args[0]}: ${res.val}`);
+          console.log(`# ${args[0]} <- ${res.val}`);
           
           rl.prompt();
 
@@ -243,7 +249,7 @@ rl.on('line', (line) => {
 
           var res = await peer.set(args[0], val);
         
-          console.log(`${res.hash.toString('hex')}: ${val}`); 
+          console.log(`# ${args[0]} -> ${val}`); 
 
           rl.prompt();
 
@@ -260,8 +266,10 @@ rl.on('line', (line) => {
         console.log('node uninitialized');
 
       } else {
+
+        args = minimist(args);
       
-        console.log(peer.toString());
+        console.log(peer.toString(args.all));
         
       }
 
@@ -293,13 +301,13 @@ rl.on('line', (line) => {
             
             var res = await peer.shutdown();
 
-            console.log(`DOWN ${res.addr} (${res.id})`);
+            console.log(`# DOWN ${res.addr} (${res.id})`);
 
             peer = undefined;
 
           } catch (err) {
 
-            console.log('shutdown', err);
+            console.log('quit::shutdown', err);
 
           }
 

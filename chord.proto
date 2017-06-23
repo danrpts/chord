@@ -1,44 +1,29 @@
 syntax = "proto3";
 
 service chordRPC {
-  rpc echoPeer (echoPeerRequest) returns (empty) {}
-  rpc pingPeer (timestamp) returns (timestamp) {}
+
   rpc getPredecessor (empty) returns (getPredecessorResponse) {}
   rpc getSuccessor (empty) returns (getSuccessorResponse) {}
-  rpc findSuccessor (X) returns (Z) {}
+  rpc findSuccessor (findSuccessorRequest) returns (findSuccessorResponse) {}
+
+  rpc echo (echoRequest) returns (empty) {}
+  rpc ping (timestamp) returns (timestamp) {}
   rpc notify (notifyRequest) returns (empty) {}
-  rpc getKey (X) returns (Y) {}
-  rpc setKey (Y) returns (Y) {}
-  rpc moveKey(Y) returns (Y) {} 
+  rpc get (getRequest) returns (getResponse) {}
+  rpc set (setRequest) returns (empty) {}
+
 }
 
-message A {
+message echoRequest {
   string msg = 1;
-}
-
-message timestamp {
-  int64 secs = 1;
-  int32 nans = 2;
-}
-
-message X {
-  bytes hash = 1;
-}
-
-message Y {
-  bytes hash = 1;
-  bytes val = 2;
-}
-
-message Z {
-  string addr = 1;
+  string addr = 2;
 }
 
 message empty {}
 
-message echoPeerRequest {
-  string msg = 1;
-  string addr = 2;
+message timestamp {
+  int64 secs = 1;
+  int32 nans = 2;
 }
 
 message getPredecessorResponse {
@@ -49,6 +34,27 @@ message getSuccessorResponse {
   string addr = 1;
 }
 
+message findSuccessorRequest {
+  bytes hash = 1;
+}
+
+message findSuccessorResponse {
+  string addr = 1;
+}
+
 message notifyRequest {
   string addr = 1;
+}
+
+message getRequest {
+  bytes hash = 1;
+}
+
+message getResponse {
+  bytes val = 1;
+}
+
+message setRequest {
+  bytes hash = 1;
+  bytes val = 2;
 }
