@@ -94,7 +94,7 @@ rl.on('line', (line) => {
               
               var res = await peer.shutdown();
 
-              console.log(`# DOWN ${res.addr} (${res.id})`);
+              console.log(`SHUTDOWN ${res.addr} (${res.id})`);
 
               peer = undefined;
 
@@ -114,13 +114,13 @@ rl.on('line', (line) => {
 
           peer.on('echo', res => {
 
-            console.log(`\n# ${res.addr} -> ${res.msg}`);
+            console.log(`\nECHO ${res.addr} (${res.msg})`);
 
             rl.prompt();
 
           });
 
-          console.log(`# UP ${peer.addr} (${peer.id})`);
+          console.log(`CREATE ${peer.addr} (${peer.id})`);
 
 
         } catch (err) {
@@ -149,8 +149,6 @@ rl.on('line', (line) => {
 
         peer.echo(addr, msg);
 
-        console.log(`# ${addr} <- ${msg}`);
-
       }   
 
       rl.prompt();
@@ -173,7 +171,7 @@ rl.on('line', (line) => {
 
           var res = await peer.ping(addr);
         
-          console.log(`# PING ${addr} ${(res.dif.nans / 1e6).toPrecision(3)} ms`);          
+          console.log(`PING ${addr} ${(res.dif.nans / 1e6).toPrecision(3)} ms`);          
 
           rl.prompt();
 
@@ -223,7 +221,7 @@ rl.on('line', (line) => {
           
           var res = await peer.get(args[0]);
 
-          console.log(`# ${args[0]} <- ${res.val}`);
+          console.log(`GET ${res.val}`);
           
           rl.prompt();
 
@@ -249,7 +247,7 @@ rl.on('line', (line) => {
 
           var res = await peer.set(args[0], val);
         
-          console.log(`# ${args[0]} -> ${val}`); 
+          //console.log(`SET ${args[0]} -> ${val}`); 
 
           rl.prompt();
 
@@ -301,7 +299,7 @@ rl.on('line', (line) => {
             
             var res = await peer.shutdown();
 
-            console.log(`# DOWN ${res.addr} (${res.id})`);
+            console.log(`SHUTDOWN ${res.addr} (${res.id})`);
 
             peer = undefined;
 

@@ -9,6 +9,7 @@ const chordRPC = grpc.load(__dirname + '/chord.proto').chordRPC;
 const M = 160;
 const MAX_ID = bignum.pow(2, M);
 const FINGER_BASE = new Array(M).fill(undefined).map((_,i) => bignum.pow(2, i));
+const R = 3;
 
 /**
  *
@@ -112,28 +113,143 @@ function between (el, lwr, upr, lwrIcl = false, uprIcl = false) {
 }
 
 /**
+ *
+ */
+async function fixFingers () {
+  
+  try {
+
+    var hash = bignum.fromBuffer(this._idHash).add(FINGER_BASE[this.iFinger]).mod(MAX_ID).toBuffer();
+
+    this.iFinger += 1;
+    
+    if (M <= this.iFinger) {
+      this.iFinger = 0;
+    }
+
+    var res = await findSuccessorHelper.call(this, hash);
+
+    this.finger[this.iFinger] = res.addr;
+
+  } catch (err) {
+
+    console.log("fixFingers::findSuccessor", err);
+
+  }
+
+}
+
+/**
+ * 
+ */
+async function checkPredecessor () {
+
+  try {
+
+    if (this.pAddr) await rpc(this.pAddr, 'ping');
+
+  } catch (err) {
+
+    // TODO if err === Connect Failed
+
+    // fix predecessor
+    this.pAddr = null;
+
+    console.log("checkPredecessor::ping", err);
+
+  }
+  
+}
+
+
+/**
+ * fix successor list
+ */
+async function checkSuccessor () {
+
+  try {
+
+    let suc = this.successor[0];
+
+    let res = await rpc(suc, 'getSuccessorList');
+
+    // remove last entry
+    res.addr.splice(R - 1, 1);
+
+    // prepend succ
+    res.addr.unshift(suc);
+
+    this.successor = res.addr;
+
+  } catch (err) {
+
+    // immediate successor is dead
+    this.successor.shift();
+
+    this.successor.push(this.addr);
+
+    // TODO if err === Connect failed
+
+    console.log("checkSuccessor::getSuccessorList", err);
+
+  }
+
+}
+
+/**
  * closest known preceding node
  */
-function closestPrecedingNode (hash) {
+function closestPrecedingNode (id) {
 
-  // NOTE maybe i = this.iFinger and remove isAddress
-  for (var i = M - 1; i > -1; i--) {
+  var mostImmediatePredecessor = [this.successor[0], this._idHash];
 
-    var peer = this.finger[i];
+  // check against the successor list
+  for (var i = R - 1; i > -1; i--) {
 
-    // finger table is cold
+    let peer = this.successor[i];
+
+    // successor table is cold
     if (!isAddress(peer)) continue;
 
-    if (between(toSha1(peer), toSha1(this.addr), hash)) {
+    let peerId = toSha1(peer);
+
+    if (between(peerId, mostImmediatePredecessor[1], id)) {
       
-      return peer;
+      mostImmediatePredecessor[0] = peer;
+
+      mostImmediatePredecessor[1] = peerId;
+      
+      break;
 
     }
 
   }
 
-  // return successor
-  return this.finger[0];
+  // NOTE maybe i = this.iFinger and remove isAddress
+
+  // then check against the finger table
+  for (var i = M - 1; i > -1; i--) {
+
+    let peer = this.finger[i];
+
+    // finger table is cold
+    if (!isAddress(peer)) continue;
+
+    let peerId = toSha1(peer);
+
+    if (between(peerId, mostImmediatePredecessor[1], id)) {
+      
+      mostImmediatePredecessor[0] = peer;
+
+      mostImmediatePredecessor[1] = peerId;
+
+      break;
+
+    }
+
+  }
+
+  return mostImmediatePredecessor[0];
 
 }
 
@@ -143,9 +259,9 @@ function closestPrecedingNode (hash) {
 async function findSuccessorHelper (hash) {
 
 
-  if (between(hash, this._idHash, toSha1(this.sAddr), false, true)) {
+  if (between(hash, this._idHash, toSha1(this.successor[0]), false, true)) {
 
-    return { addr: this.sAddr };
+    return { addr: this.successor[0] };
 
   } else {
 
@@ -175,15 +291,9 @@ function onGetPredecessor (call, cb) {
 /**
  *
  */
-function onGetSuccessor (call, cb) {
+function onGetSuccessorList (call, cb) {
 
-  var res = {};
-
-  if (this.sAddr != null) {
-    res.addr = this.sAddr;
-  }
-
-  cb(null, res);
+  cb(null, this.successor);
 
 }
 
@@ -312,15 +422,13 @@ class Peer extends EventEmitter {
     this.id = this._idHash.toString('hex');
 
     this.pAddr = null; // predecessor address
-    
-    this.sAddr = this.addr; // successor address
 
     this.server = listen(this.addr, {
     
       getPredecessor: onGetPredecessor.bind(this),
-    
-      getSuccessor: onGetPredecessor.bind(this),
-    
+        
+      getSuccessorList: onGetSuccessorList.bind(this),
+
       findSuccessor: onFindSuccessor.bind(this),
 
       echo: onEcho.bind(this),
@@ -342,6 +450,11 @@ class Peer extends EventEmitter {
     this.finger = new Array(M);
 
     this.iFinger = 0;
+
+    this.successor = new Array(R);
+
+    // set immediate successor
+    this.successor.fill(this.addr);
 
   }
 
@@ -410,7 +523,7 @@ class Peer extends EventEmitter {
 
       this.pAddr = null;
       
-      this.sAddr = res.addr;
+      this.successor[0] = res.addr;
 
     } catch (err) {
     
@@ -427,63 +540,33 @@ class Peer extends EventEmitter {
    */
   async stabilize () {
 
-    // check predecessor
     try {
 
-      if (this.pAddr) await rpc(this.pAddr, 'ping');
+      await checkPredecessor.call(this);
+
+      await checkSuccessor.call(this);
+
+      await fixFingers.call(this);
 
     } catch (err) {
 
-      // fix predecessor
-      this.pAddr = null;
-
-      console.log("stabilize::ping", err);
-
-    }
-
-    // fix fingers
-    try {
-
-      var hash = bignum.fromBuffer(this._idHash).add(FINGER_BASE[this.iFinger]).mod(MAX_ID).toBuffer();
-
-      this.iFinger += 1;
-      
-      if (M <= this.iFinger) {
-        this.iFinger = 0;
-      }
-
-
-      var res = await findSuccessorHelper.call(this, hash);
-
-      this.finger[this.iFinger] = res.addr;
-
-    } catch (err) {
-
-      // TODO if err === Connect Failed
-
-      // fix successor
-      this.sAddr = this.addr;
-
-      console.log("stabilize::findSuccessor", err);
+      console.log(err);
 
     }
 
     // update successor
     try {
 
-      let res = await rpc(this.sAddr, 'getPredecessor');
+      let res = await rpc(this.successor[0], 'getPredecessor');
 
-      if (res.addr != '' && between(toSha1(res.addr), this._idHash, toSha1(this.sAddr))) {
+      if (res.addr != '' && between(toSha1(res.addr), this._idHash, toSha1(this.successor[0]))) {
 
         // case res.addr just joined
-        this.sAddr = res.addr;
+        this.successor[0] = res.addr;
 
       }
 
     } catch (err) {
-    
-      // fix successor
-      this.sAddr = this.addr;
 
       console.log("stabilize::getPredecessor", err);
 
@@ -492,12 +575,9 @@ class Peer extends EventEmitter {
     // update successor's predecessor
     try {
 
-      await rpc(this.sAddr, 'notify', { addr: this.addr });
+      await rpc(this.successor[0], 'notify', { addr: this.addr });
 
     } catch (err) {
-    
-      // fix successor
-      this.sAddr = this.addr;
 
       console.log("stabilize::notify", err);
 
@@ -603,7 +683,12 @@ class Peer extends EventEmitter {
 
     var str = `PRED ${this.pAddr} (${this.pAddr != null ? toSha1(this.pAddr).toString('hex') : undefined})\n` +
               `SELF ${this.addr} (${this.id})\n` +
-              `SUCC ${this.sAddr} (${toSha1(this.sAddr).toString('hex')})`;
+              `SUCS ${this.successor[0]} (${toSha1(this.successor[0]).toString('hex')})`;
+
+    this.successor.forEach((suc, i) => {
+      if (i === 0) return;
+      str += `\n     ${suc} (${toSha1(suc).toString('hex')})`;
+    });
 
     for (var hashStr in this.bucket) {
       str += `\nDATA ${hashStr}: ${this.bucket[hashStr].toString()}`;

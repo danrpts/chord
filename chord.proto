@@ -3,7 +3,7 @@ syntax = "proto3";
 service chordRPC {
 
   rpc getPredecessor (empty) returns (getPredecessorResponse) {}
-  rpc getSuccessor (empty) returns (getSuccessorResponse) {}
+  rpc getSuccessorList (empty) returns (getSuccessorListResponse) {}
   rpc findSuccessor (findSuccessorRequest) returns (findSuccessorResponse) {}
 
   rpc echo (echoRequest) returns (empty) {}
@@ -32,6 +32,10 @@ message getPredecessorResponse {
 
 message getSuccessorResponse {
   string addr = 1;
+}
+
+message getSuccessorListResponse {
+  repeated string addr = 1;
 }
 
 message findSuccessorRequest {
