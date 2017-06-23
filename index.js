@@ -80,9 +80,11 @@ rl.on('line', (line) => {
 
     case 'create':
 
-      var port = args.p;
+      var port;
 
       args = minimist(args);
+
+      port = args.p;
 
       (async () => {
 

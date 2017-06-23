@@ -1,6 +1,7 @@
 const ip = require('ip');
 const grpc = require('grpc');
 const crypto = require('crypto');
+const bignum = require('bignum');
 const EventEmitter = require('events').EventEmitter;
 const Buffer = require('buffer').Buffer;
 const chordRPC = grpc.load(__dirname + '/chord.proto').chordRPC;
@@ -23,7 +24,7 @@ function isAddress (addr) {
 /**
  *
  */
-function call (addr, method, req) {
+function rpc (addr, method, req) {
 
   if (!isAddress(addr)) {
     return new Error('"addr" argument must be compact IP-address:port');
@@ -176,7 +177,7 @@ async function onFindSuccessor (call, cb) {
 
     try {
 
-     var res = await call(this.sAddr, 'findSuccessor', { hash });
+     var res = await rpc(this.sAddr, 'findSuccessor', { hash });
 
      cb(null, res);
 
@@ -300,12 +301,19 @@ class Peer extends EventEmitter {
 
     // TODO NOTE
     // in constructor for a reason
-    this.timeout = setInterval(this.stabilize.bind(this), 5000);
+    this.timeout = setInterval(this.stabilize.bind(this), 1000);
 
     this.storage = {};
 
     // m=160 records
-    this.fingers = [];
+    this.finger = [];
+    this.next = 0;
+
+    this._fingerBase = [];
+
+    for (var i = 0; i < 160; i++) {
+      this._fingerBase[i] = bignum.pow(2, i);
+    }
 
   }
 
@@ -318,7 +326,7 @@ class Peer extends EventEmitter {
 
     try {
 
-      res = await call(addr, 'echoPeer', { msg, addr: this.addr });
+      res = await rpc(addr, 'echoPeer', { msg, addr: this.addr });
 
     } catch (err) {
 
@@ -347,7 +355,7 @@ class Peer extends EventEmitter {
 
     try {
 
-      res = await call(addr, 'pingPeer', hrtimeObj());
+      res = await rpc(addr, 'pingPeer', hrtimeObj());
 
       res.dif = hrtimeObj([res.secs, res.nans]);
 
@@ -370,7 +378,7 @@ class Peer extends EventEmitter {
 
     try {
 
-      res = await call(addr, 'findSuccessor', { hash: this._idHash });
+      res = await rpc(addr, 'findSuccessor', { hash: this._idHash });
 
       this.pAddr = null;
       
@@ -394,7 +402,7 @@ class Peer extends EventEmitter {
     // check predecessor
     try {
 
-      await call(this.pAddr, 'pingPeer');
+      await rpc(this.pAddr, 'pingPeer');
 
     } catch (err) {
 
@@ -404,28 +412,35 @@ class Peer extends EventEmitter {
     }
 
     // fix fingers
-    // try {
+    try {
 
-    //   this.next = this.next + 1;
+      this.next = this.next + 1;
       
-    //   if (160 < this.next) {
-    //     this.next = 1;
-    //   }
+      if (20 < this.next) {
+        this.next = 1;
+      }
 
-    //   let hash = this.addr + 2^(next - 1)
+      var hash = bignum.fromBuffer(this._idHash).add(this._fingerBase[this.next]).toBuffer();
 
-    //   finger[next] = await call(this.sAddr, 'findSuccessor', { hash: });
+      var res = await rpc(this.sAddr, 'findSuccessor', { hash });
 
-    // } catch (err) {
+      this.finger[this.next] = res.addr;
 
-    //   console.log()
-    
-    // }
+    } catch (err) {
+
+      // TODO if err === Connect Failed
+
+      // fix successor
+      this.sAddr = this.addr;
+
+      console.log("findSuccessor", err);
+
+    }
 
     // update successor
     try {
 
-      let res = await call(this.sAddr, 'getPredecessor');
+      let res = await rpc(this.sAddr, 'getPredecessor');
 
       if (res.addr != '' && between(toSha1(res.addr), this._idHash, toSha1(this.sAddr))) {
 
@@ -439,21 +454,21 @@ class Peer extends EventEmitter {
       // fix successor
       this.sAddr = this.addr;
 
-      //console.log("getPredecessor", err);
+      console.log("getPredecessor", err);
 
     }
 
     // update successor's predecessor
     try {
 
-      await call(this.sAddr, 'notify', { addr: this.addr });
+      await rpc(this.sAddr, 'notify', { addr: this.addr });
 
     } catch (err) {
     
       // fix successor
       this.sAddr = this.addr;
 
-      //console.log("notifySuccessor", err);
+      console.log("notify", err);
 
     }
 
@@ -470,7 +485,7 @@ class Peer extends EventEmitter {
 
     try {
 
-      res = await call(this.addr, 'findSuccessor', { hash });
+      res = await rpc(this.addr, 'findSuccessor', { hash });
 
     } catch (err) {
     
@@ -480,7 +495,7 @@ class Peer extends EventEmitter {
 
     try {
 
-      res = await call(res.addr, 'getKey', { hash });
+      res = await rpc(res.addr, 'getKey', { hash });
 
     } catch (err) {
     
@@ -505,7 +520,7 @@ class Peer extends EventEmitter {
 
     try {
 
-      res = await call(this.addr, 'findSuccessor', { hash });
+      res = await rpc(this.addr, 'findSuccessor', { hash });
 
     } catch (err) {
     
@@ -515,7 +530,7 @@ class Peer extends EventEmitter {
 
     try {
 
-      res = await call(res.addr, 'setKey', { hash, val });
+      res = await rpc(res.addr, 'setKey', { hash, val });
 
     } catch (err) {
     
@@ -562,6 +577,10 @@ class Peer extends EventEmitter {
     for (var hashStr in this.storage) {
       str += `\nDATA ${hashStr}: ${this.storage[hashStr].toString()}`;
     }
+
+    this.finger.forEach((finger, i) => {
+      str += `\n FNGR ${i} : ${finger}`;
+    });
 
     return str;
 
