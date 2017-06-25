@@ -7,7 +7,7 @@ const Buffer = require('buffer').Buffer;
 const chordRPC = grpc.load(__dirname + '/chord.proto').chordRPC;
 
 const M = 3;
-const MAX_ID = bignum.pow(2, M);
+const MAX_ID = bignum.pow(2, 160);
 const FINGER_BASE = new Array(M).fill(undefined).map((_,i) => bignum.pow(2, i));
 const R = 3;
 
@@ -145,11 +145,9 @@ async function fixFingers () {
   
   try {
 
-    var res = await findSuccessor.call(this, id);
+    var successor = await findSuccessor.call(this, id);
 
-    console.log('return', res, '\n');
-
-    this.finger[this.iFinger] = res.addr;
+    this.finger[this.iFinger] = successor.addr;
 
   } catch (err) {
 
@@ -203,7 +201,7 @@ async function rectify (notifier) {
  */
 async function notify () {
 
-    // update successor's predecessor
+  // update successor's predecessor
   try {
 
     await rpc(this.successorList[0], 'notify', { addr: this.addr });
@@ -299,6 +297,8 @@ async function findSuccessor (id) {
         // check alive
         await rpc(successor, 'ping');
 
+        //console.log(`found ${id.toString('hex')} for ${successor}`);
+
         // break from loop
         return { addr: successor };
 
@@ -336,6 +336,9 @@ async function findSuccessor (id) {
     }
 
   }
+
+  // default
+  //return { addr: this.successorList[0] };
 
 }
 
@@ -522,18 +525,18 @@ class Peer extends EventEmitter {
     // periodic 
     this.timeout = setInterval(() => {
         checkPredecessor.call(this);
-        //fixFingers.call(this);
+        fixFingers.call(this);
         stabilize.call(this);
     }, 1000);
 
     // local storage
     this.bucket = {};
 
-    //this.finger = new Array(M);
+    this.finger = new Array(M);
 
-    //this.finger.fill(undefined);
+    this.finger.fill('');
 
-    //this.iFinger = 0;
+    this.iFinger = 0;
 
 
   }
@@ -715,21 +718,19 @@ class Peer extends EventEmitter {
 
     var str = '';
 
-    str += `<Predecessor> ${this.predecessor ? this.predecessor : '(undefined)'}\n`;
+    str += `<Predecessor> ${(this.predecessor) ? this.predecessor : ''}\n`;
 
     str += `<Self> ${this.addr}\n`;
 
-    for (let successor of this.successorList) str += `<Successors> ${successor}\n`;
-
-    str += '<Bucket>\n';
-    for (let idStr in this.bucket) {
-      str += `${idStr} : ${this.bucket[idStr].toString()}\n`;
+    for (let i = 0; i < this.successorList.length; i++) {
+      str += `<Successor ${i}> ${this.successorList[i]}\n`;
     }
 
-    // str += '<Fingers>\n';
-    // for (let i = 0; i < this.finger.length; i++) {
-    //   str += `${(i === this.iFinger) ? '_' : i}: ${(this.finger[i]) ? this.finger[i] : '(undefined)'}\n`;
-    // }
+    for (let idStr in this.bucket) str += `<Bucket ${idStr}> ${this.bucket[idStr].toString()}\n`;
+
+    for (let i = 0; i < this.finger.length; i++) {
+      str += `<Finger ${i}> ${this.finger[i]}\n`;
+    }
 
     return str;
 
