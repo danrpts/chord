@@ -17,7 +17,7 @@ function printHelp () {
               'leave                       Remove this node from network\n',
               'get <key>                   Find value in network\n',
               'set <key> <val ...>         Update key in network\n',
-              'info [--all]                Output info about this node\n',
+              'info                        Output info about this node\n',
               'clear                       Clear the terminal screen\n',
               'quit                        Exit shell immediately\n',
               'help                        Display command help');
@@ -94,7 +94,7 @@ rl.on('line', (line) => {
               
               var res = await peer.shutdown();
 
-              console.log(`SHUTDOWN ${res.addr} (${res.id})`);
+              console.log(`SHUTDOWN ${res.addr} (${res.id.toString('hex')})`);
 
               peer = undefined;
 
@@ -120,12 +120,12 @@ rl.on('line', (line) => {
 
           });
 
-          console.log(`CREATE ${peer.addr} (${peer.id})`);
+          console.log(`CREATE ${peer.addr} (${peer.id.toString('hex')})`);
 
 
         } catch (err) {
 
-          console.log (err);
+          console.log(err);
 
         }
 
@@ -264,10 +264,8 @@ rl.on('line', (line) => {
         console.log('node uninitialized');
 
       } else {
-
-        args = minimist(args);
       
-        console.log(peer.toString(args.all));
+        console.log(peer.toString());
         
       }
 
@@ -278,6 +276,14 @@ rl.on('line', (line) => {
     case 'clear':
 
       process.stdout.write('\033c');
+      
+      rl.prompt();
+
+      break;
+
+    case 'pause':
+
+      clearInterval(peer.timeout);
       
       rl.prompt();
 
@@ -299,7 +305,7 @@ rl.on('line', (line) => {
             
             var res = await peer.shutdown();
 
-            console.log(`SHUTDOWN ${res.addr} (${res.id})`);
+            console.log(`SHUTDOWN ${res.addr} (${res.id.toString('hex')})`);
 
             peer = undefined;
 

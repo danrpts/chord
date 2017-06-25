@@ -10,8 +10,9 @@ service chordRPC {
   rpc ping (timestamp) returns (timestamp) {}
   rpc notify (notifyRequest) returns (empty) {}
   rpc get (getRequest) returns (getResponse) {}
-  rpc set (setRequest) returns (empty) {}
-
+  rpc set (bucketEntry) returns (empty) {}
+  rpc getAll(getRequest) returns (bucketEntryList) {}
+  rpc setAll(bucketEntryList) returns (empty) {}
 }
 
 message echoRequest {
@@ -35,11 +36,11 @@ message getSuccessorResponse {
 }
 
 message getSuccessorListResponse {
-  repeated string addr = 1;
+  repeated string addrs = 1;
 }
 
 message findSuccessorRequest {
-  bytes hash = 1;
+  bytes id = 1;
 }
 
 message findSuccessorResponse {
@@ -51,14 +52,18 @@ message notifyRequest {
 }
 
 message getRequest {
-  bytes hash = 1;
+  bytes id = 1;
 }
 
 message getResponse {
   bytes val = 1;
 }
 
-message setRequest {
-  bytes hash = 1;
+message bucketEntry {
+  bytes id = 1;
   bytes val = 2;
+}
+
+message bucketEntryList {
+  repeated bucketEntry entry = 1;
 }
