@@ -1,6 +1,5 @@
 const minimist = require('minimist');
 const readline = require('readline');
-const getPort = require('get-port');
 const dht = require('./dht.js');
 
 function printUsage () {
@@ -14,12 +13,12 @@ function printHelp () {
               'echo <address> [arg ...]    Output to remote node\n',
               'ping <address>              Ping remote node\n',
               'join <address>              Add this node to a network\n',
-//              'leave                       Remove this node from network\n',
+              'leave                       Remove this node from network\n',
               'get <key>                   Find value in network\n',
               'set <key> <val ...>         Update key in network\n',
               'info                        Output info about this node\n',
               'clear                       Clear the terminal screen\n',
-              'quit                        Exit shell immediately\n',
+              'quit                        Exit CLI immediately\n',
               'help                        Display command help');
 }
 
@@ -80,41 +79,25 @@ rl.on('line', (line) => {
 
     case 'create':
 
-      var port;
-
-      args = minimist(args);
-
-      port = args.p;
-
-      (async () => {
-
         if (peer) {
+ 
+          peer.shutdown();
 
-            try {
-              
-              var res = await peer.leave();
+          peer = undefined;
 
-              console.log(`LEAVE ${res.addr} (${res.id.toString('hex')})`);
+          rl.prompt();
 
-              peer = undefined;
+        } else {
 
-            } catch (err) {
+        (async () => {
 
-              console.log('create::leave', err);
+          args = minimist(args);
 
-            }
+          peer = new dht.Peer(args.p);
 
-        }
+          peer.on('echo', getEcho => {
 
-        try {
-
-          port = await getPort(port);
-
-          peer = new dht.Peer(port);
-
-          peer.on('echo', res => {
-
-            console.log(`\nECHO ${res.addr} (${res.msg})`);
+            console.log(`\nECHO ${getEcho.addr} (${getEcho.msg})`);
 
             rl.prompt();
 
@@ -122,16 +105,11 @@ rl.on('line', (line) => {
 
           console.log(`CREATE ${peer.addr} (${peer.id.toString('hex')})`);
 
+          rl.prompt();
 
-        } catch (err) {
+        })();
 
-          console.log(err);
-
-        }
-
-        rl.prompt();
-
-      })();
+      }
 
       break;
 
@@ -192,11 +170,27 @@ rl.on('line', (line) => {
         args = minimist(args);
         
         peer.join(args._[0]);
-          
+
       }
 
       rl.prompt();
       
+      break;
+
+    case 'leave':
+
+      if (!peer) {
+
+        console.log('node uninitialized');
+
+      } else {
+
+        peer.leave();
+
+      }
+
+      rl.prompt();
+
       break;
 
     case 'get':
@@ -277,17 +271,11 @@ rl.on('line', (line) => {
 
       if (!peer) {
 
-        console.log('node uninitialized');
-
         process.exit(0);
 
       } else {
 
         (async () => {
-
-          await peer.leave();
-
-          console.log(`LEAVE ${peer.addr} (${peer.id.toString('hex')})`);
 
           peer.shutdown();
 

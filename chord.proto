@@ -56,12 +56,12 @@ message getRequest {
 }
 
 message getResponse {
-  bytes val = 1;
+  bytes value = 1;
 }
 
 message bucketEntry {
   bytes id = 1;
-  bytes val = 2;
+  bytes value = 2;
 }
 
 message getAllRequest {

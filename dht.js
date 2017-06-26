@@ -81,9 +81,9 @@ function listen (addr, api) {
 /**
  *
  */
-function toSha1 (val) {
+function toSha1 (value) {
   
-  return crypto.createHash('sha1').update(val).digest();
+  return crypto.createHash('sha1').update(value).digest();
 
 }
 
@@ -145,9 +145,9 @@ async function fixFingers () {
   
   try {
 
-    var successor = await findSuccessor.call(this, id);
+    var findSuccessorResponse = await findSuccessor.call(this, id);
 
-    this.finger[this.iFinger] = successor.addr;
+    this.finger[this.iFinger] = findSuccessorResponse.addr;
 
   } catch (err) {
 
@@ -221,38 +221,38 @@ async function stabilize () {
     //console.log(this.successorList);
 
     // update successor when node joined in between
-    let predecessor = await rpc(this.successorList[0], 'getPredecessor');
+    let getPredecessorResponse = await rpc(this.successorList[0], 'getPredecessor');
 
     // check alive
-    let successorList = await rpc(this.successorList[0], 'getSuccessorList');
+    let successorListResponse = await rpc(this.successorList[0], 'getSuccessorList');
 
     // remove last entry
-    successorList.addrs.splice(R - 1, 1);
+    successorListResponse.addrs.splice(R - 1, 1);
 
     // prepend new successor
-    successorList.addrs.unshift(this.successorList[0]);
+    successorListResponse.addrs.unshift(this.successorList[0]);
 
     // reconcile
-    this.successorList = successorList.addrs;
+    this.successorList = successorListResponse.addrs;
 
     let predecessorIsNotDead = this.predecessor != '';
 
-    if (predecessorIsNotDead && between(toSha1(predecessor.addr), this.id, toSha1(this.successorList[0]))) {
+    if (predecessorIsNotDead && between(toSha1(getPredecessorResponse.addr), this.id, toSha1(this.successorList[0]))) {
       
       // monitoring technique (do not add invalid successor)
       try {
         
         // check alive
-        let successorList = await rpc(predecessor.addr, 'getSuccessorList');
+        successorListResponse = await rpc(getPredecessorResponse.addr, 'getSuccessorList');
 
         // remove last entry
-        successorList.addrs.splice(R - 1, 1);
+        successorListResponse.addrs.splice(R - 1, 1);
 
         // prepend new successor
-        successorList.addrs.unshift(predecessor.addr);
+        successorListResponse.addrs.unshift(getPredecessorResponse.addr);
 
         // reconcile
-        this.successorList = successorList.addrs;
+        this.successorList = successorListResponse.addrs;
       
       } catch (_) {/* ignore*/}
 
@@ -305,7 +305,7 @@ function* closestPrecedingNode (id) {
 
   }
 
-  // no finger is applicable so iterate successor list
+  // no finger is applicable so default to successor list
   for (let successor of this.successorList) {
 
     yield successor;
@@ -354,13 +354,13 @@ async function findSuccessor (id) {
 
         try {
 
-          console.log(`findSuccessor calling... ${predecessorAddr}`);
+          //console.log(`findSuccessor calling... ${predecessorAddr}`);
 
           // check alive and forward
-          let successor = await rpc(predecessorAddr, 'findSuccessor', { id });
+          let findSuccessorResponse = await rpc(predecessorAddr, 'findSuccessor', { id });
 
           // break from outer loop
-          return successor;
+          return findSuccessorResponse;
 
         // successor is dead
         } catch (err) {
@@ -388,13 +388,13 @@ async function findSuccessor (id) {
  */
 function onGetPredecessorRequest (call, cb) {
 
-  var res = {};
+  var getPredecessorResponse = {};
 
   if (this.predecessor != null) {
-    res.addr = this.predecessor;
+    getPredecessorResponse.addr = this.predecessor;
   }
 
-  cb(null, res);
+  cb(null, getPredecessorResponse);
 
 }
 
@@ -414,11 +414,11 @@ async function onFindSuccessorRequest (call, cb) {
 
   try {
 
-    let successor = await findSuccessor.call(this, call.request.id);
+    let findSuccessorResponse = await findSuccessor.call(this, call.request.id);
 
-    console.log(`onFindSuccessor return... ${successor.addr}`);
+    //console.log(`onFindSuccessor return... ${findSuccessorResponse.addr}`);
 
-    cb(null, successor);
+    cb(null, findSuccessorResponse);
 
   } catch (err) {
 
@@ -478,7 +478,7 @@ function onGetRequest (call, cb) {
 
   if (this.bucket.hasOwnProperty(idStr)) {
 
-    cb(null, { val: this.bucket[idStr] }); 
+    cb(null, { value: this.bucket[idStr] }); 
 
   } else {
 
@@ -497,11 +497,11 @@ function onSetRequest (call, cb) {
   
   var idStr = id.toString('hex');
   
-  var val = call.request.val.toString('utf8');
+  var value = call.request.value.toString('utf8');
 
   // TODO handle some error here and cb(new Error())
 
-  this.bucket[idStr] = val;
+  this.bucket[idStr] = value;
 
   cb(null); 
 
@@ -520,9 +520,9 @@ function onGetAllRequest (call, cb) {
 
     if (between(id, toSha1(this.predecessor), call.request.id, false, true)) {
 
-      let val = Buffer.from(this.bucket[idStr], 'utf8');
+      let value = Buffer.from(this.bucket[idStr], 'utf8');
 
-      bucketEntries.push({ id, val });
+      bucketEntries.push({ id, value });
 
       delete this.bucket[idStr];
 
@@ -543,13 +543,13 @@ function onSetAllRequest (call, cb) {
 
     var idStr = entry.id.toString('hex');
   
-    var val = entry.val;
+    var value = entry.value;
 
-    this.bucket[idStr] = val.toString();
+    this.bucket[idStr] = value.toString('utf8');
 
   }
   
-  // TODO handle some error here and cb(new Error())
+  // TODO handle error
 
   cb(null);
 
@@ -563,9 +563,17 @@ class Peer extends EventEmitter {
   /**
    *
    */
-  constructor (port) {
+  constructor (port, options) {
 
     super();
+
+    // _.defaults(options, {
+
+    //   bucketKeyEncoding: 'hex',
+
+    //   bucketValueEncoding: 'utf8'
+
+    // });
 
     // set address
     this.addr = ip.address() + ':' + port;
@@ -589,26 +597,41 @@ class Peer extends EventEmitter {
 
     // start RPC server
     this.server = listen(this.addr, {
+  
       getPredecessor: onGetPredecessorRequest.bind(this),
+  
       getSuccessorList: onGetSuccessorListRequest.bind(this),
+  
       findSuccessor: onFindSuccessorRequest.bind(this),
+    
       echo: onEchoRequest.bind(this),
+    
       ping: onPingRequest.bind(this),
+    
       notify: onNotifyRequest.bind(this),
+    
       get: onGetRequest.bind(this),
+    
       set: onSetRequest.bind(this),
+    
       getAll : onGetAllRequest.bind(this),
+    
       setAll: onSetAllRequest.bind(this)
+    
     });
 
     // periodic 
     this.timeout = setInterval(() => {
+
         checkPredecessor.call(this);
+      
         fixFingers.call(this);
+      
         stabilize.call(this);
+    
     }, 1000);
 
-    // local storage
+    // local bucket storage
     this.bucket = {};
 
     this.finger = new Array(M);
@@ -617,7 +640,6 @@ class Peer extends EventEmitter {
 
     this.iFinger = 0;
 
-
   }
 
   /**
@@ -625,11 +647,11 @@ class Peer extends EventEmitter {
    */
   async echo (addr, msg) {
 
-    var res;
+    var getEchoResponse;
 
     try {
 
-      res = await rpc(addr, 'echo', { msg, addr: this.addr });
+      getEchoResponse = await rpc(addr, 'echo', { msg, addr: this.addr });
 
     } catch (err) {
 
@@ -637,7 +659,7 @@ class Peer extends EventEmitter {
 
     }
 
-    return res;
+    return getEchoResponse;
 
   }
 
@@ -646,7 +668,7 @@ class Peer extends EventEmitter {
    */
   async ping (addr) {
 
-    var res;
+    var getPingResponse;
 
     function hrtimeObj (rel) {
 
@@ -658,9 +680,9 @@ class Peer extends EventEmitter {
 
     try {
 
-      res = await rpc(addr, 'ping', hrtimeObj());
+      getPingResponse = await rpc(addr, 'ping', hrtimeObj());
 
-      res.dif = hrtimeObj([res.secs, res.nans]);
+      getPingResponse.dif = hrtimeObj([getPingResponse.secs, getPingResponse.nans]);
 
     } catch (err) {
     
@@ -668,7 +690,7 @@ class Peer extends EventEmitter {
 
     }
 
-    return res;
+    return getPingResponse;
 
   }
 
@@ -680,28 +702,28 @@ class Peer extends EventEmitter {
     // bootstrap steps (do not wait for stabilize)
     try {
 
-      let findSuccessor = await rpc(addr, 'findSuccessor', { id: this.id });
+      let findSuccessorResponse = await rpc(addr, 'findSuccessor', { id: this.id });
 
-      let getAll = await rpc(findSuccessor.addr, 'getAll', { id: this.id });
+      let getAllResponse = await rpc(findSuccessorResponse.addr, 'getAll', { id: this.id });
 
-      for (let entry of getAll.bucketEntries) {
+      for (let entry of getAllResponse.bucketEntries) {
 
-        this.bucket[entry.id.toString('hex')] = entry.val.toString();
+        this.bucket[entry.id.toString('hex')] = entry.value.toString('utf8');
 
       }
 
-      let getPredecessor = await rpc(findSuccessor.addr, 'getPredecessor');
+      let getPredecessorResponse = await rpc(findSuccessorResponse.addr, 'getPredecessor');
 
-      let getSuccessorList = await rpc(getPredecessor.addr, 'getSuccessorList');
+      let getSuccessorListResponse = await rpc(getPredecessorResponse.addr, 'getSuccessorList');
 
-      this.successorList = getSuccessorList.addrs;
+      this.successorList = getSuccessorListResponse.addrs;
 
-      this.predecessor = getPredecessor.addr;
+      this.predecessor = getPredecessorResponse.addr;
 
 
     } catch (err) {
     
-      throw new Error('Join Failure' + err);
+      console.log('Join Failure', err);
 
     }
 
@@ -715,9 +737,13 @@ class Peer extends EventEmitter {
     var bucketEntries = [];
 
     for (let idStr in this.bucket) {
+
       let id = Buffer.from(idStr, 'hex');
-      let val = Buffer.from(this.bucket[idStr], 'utf8');
-      bucketEntries.push({ id, val });
+      
+      let value = Buffer.from(this.bucket[idStr], 'utf8');
+      
+      bucketEntries.push({ id, value });
+    
     }
 
     try {
@@ -728,7 +754,7 @@ class Peer extends EventEmitter {
 
     } catch (err) {
 
-      console.log('leave::setAll', err);
+      console.log('leave::rpc::setAll', err);
 
     }
 
@@ -736,17 +762,25 @@ class Peer extends EventEmitter {
 
   shutdown () {
 
+    this.leave();
+
     return new Promise((resolve, reject) => {
 
-      this.server.tryShutdown(() => {
-
-        // TODO check err and reject, do not clearInterval, etc.
-
-        clearInterval(this.timeout);
+      this.server.tryShutdown(err => {
 
         // TODO unbind all events
 
-        resolve();
+        if (err) {
+
+          reject(err);
+
+        } else {
+
+          clearInterval(this.timeout);
+
+          resolve();
+
+        }
 
       });  
 
@@ -761,11 +795,13 @@ class Peer extends EventEmitter {
 
     var id = toSha1(key);
 
-    var res;
+    var findSuccessorResponse;
+
+    var getResponse;
 
     try {
 
-      res = await findSuccessor.call(this, id);
+      findSuccessorResponse = await findSuccessor.call(this, id);
 
     } catch (err) {
     
@@ -775,32 +811,32 @@ class Peer extends EventEmitter {
 
     try {
 
-      res.val = (await rpc(res.addr, 'get', { id })).val;
+      getResponse = await rpc(findSuccessorResponse.addr, 'get', { id });
 
     } catch (err) {
     
-      console.log("get::get", err);
+      console.log("get::rpc::get", err);
 
     }
 
-    return res;
+    return getResponse;
 
   }
 
   /**
    *
    */
-  async set (key, val) {
+  async set (key, value) {
 
     var id = toSha1(key);
 
-    var val = Buffer.from(val, 'utf8');
+    var value = Buffer.from(value, 'utf8');
 
-    var res;
+    var findSuccessorResponse;
 
     try {
 
-      res = await findSuccessor.call(this, id);
+      findSuccessorResponse = await findSuccessor.call(this, id);
 
     } catch (err) {
     
@@ -810,11 +846,11 @@ class Peer extends EventEmitter {
 
     try {
 
-      await rpc(res.addr, 'set', { id, val });
+      await rpc(findSuccessorResponse.addr, 'set', { id, value });
 
     } catch (err) {
     
-      console.log("set::set", err);
+      console.log("set::rpc::set", err);
 
     }
 
@@ -835,7 +871,7 @@ class Peer extends EventEmitter {
       str += `<Successor ${i}> ${this.successorList[i]}\n`;
     }
 
-    for (let idStr in this.bucket) str += `<Bucket ${idStr}> ${this.bucket[idStr].toString()}\n`;
+    for (let idStr in this.bucket) str += `<Bucket ${idStr}> ${this.bucket[idStr].toString('utf8')}\n`;
 
     for (let i = 0; i < this.finger.length; i++) {
       str += `<Finger ${i}> ${this.finger[i]}\n`;
