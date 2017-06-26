@@ -57,3 +57,8 @@ typings/
 # dotenv environment variables file
 .env
 
+# Research papers
+papers
+
+# OS
+.DS_Store
