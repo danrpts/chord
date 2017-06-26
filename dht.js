@@ -499,9 +499,9 @@ function onSetRequest (call, cb) {
   
   var value = call.request.value.toString('utf8');
 
-  // TODO handle some error here and cb(new Error())
-
   this.bucket[idStr] = value;
+
+  // TODO handle error
 
   cb(null); 
 
