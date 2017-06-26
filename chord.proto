@@ -11,8 +11,8 @@ service chordRPC {
   rpc notify (notifyRequest) returns (empty) {}
   rpc get (getRequest) returns (getResponse) {}
   rpc set (bucketEntry) returns (empty) {}
-  rpc getAll(getRequest) returns (bucketEntryList) {}
-  rpc setAll(bucketEntryList) returns (empty) {}
+  rpc getAll(getRequest) returns (getAllResponse) {}
+  rpc setAll(setAllRequest) returns (empty) {}
 }
 
 message echoRequest {
@@ -64,6 +64,14 @@ message bucketEntry {
   bytes val = 2;
 }
 
-message bucketEntryList {
-  repeated bucketEntry entry = 1;
+message getAllRequest {
+  bytes id = 1;
+}
+
+message getAllResponse {
+  repeated bucketEntry bucketEntries = 1;
+}
+
+message setAllRequest {
+  repeated bucketEntry bucketEntries = 1;
 }

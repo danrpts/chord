@@ -14,7 +14,7 @@ function printHelp () {
               'echo <address> [arg ...]    Output to remote node\n',
               'ping <address>              Ping remote node\n',
               'join <address>              Add this node to a network\n',
-              'leave                       Remove this node from network\n',
+//              'leave                       Remove this node from network\n',
               'get <key>                   Find value in network\n',
               'set <key> <val ...>         Update key in network\n',
               'info                        Output info about this node\n',
@@ -92,15 +92,15 @@ rl.on('line', (line) => {
 
             try {
               
-              var res = await peer.shutdown();
+              var res = await peer.leave();
 
-              console.log(`SHUTDOWN ${res.addr} (${res.id.toString('hex')})`);
+              console.log(`LEAVE ${res.addr} (${res.id.toString('hex')})`);
 
               peer = undefined;
 
             } catch (err) {
 
-              console.log('create::shutdown', err);
+              console.log('create::leave', err);
 
             }
 
@@ -199,14 +199,6 @@ rl.on('line', (line) => {
       
       break;
 
-    case 'leave':
-
-      // TODO
-
-      rl.prompt();
-      
-      break;
-
     case 'get':
 
       if (!peer) {
@@ -245,7 +237,7 @@ rl.on('line', (line) => {
 
           var val = args.slice(1).join(' ');
 
-          var res = await peer.set(args[0], val);
+          await peer.set(args[0], val);
         
           //console.log(`SET ${args[0]} -> ${val}`); 
 
@@ -281,14 +273,6 @@ rl.on('line', (line) => {
 
       break;
 
-    case 'pause':
-
-      clearInterval(peer.timeout);
-      
-      rl.prompt();
-
-      break;
-
     case 'quit':
 
       if (!peer) {
@@ -301,19 +285,13 @@ rl.on('line', (line) => {
 
         (async () => {
 
-          try {
-            
-            var res = await peer.shutdown();
+          await peer.leave();
 
-            console.log(`SHUTDOWN ${res.addr} (${res.id.toString('hex')})`);
+          console.log(`LEAVE ${peer.addr} (${peer.id.toString('hex')})`);
 
-            peer = undefined;
+          peer.shutdown();
 
-          } catch (err) {
-
-            console.log('quit::shutdown', err);
-
-          }
+          peer = undefined;
 
           process.exit(0);
 

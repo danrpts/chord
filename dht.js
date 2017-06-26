@@ -6,8 +6,8 @@ const EventEmitter = require('events').EventEmitter;
 const Buffer = require('buffer').Buffer;
 const chordRPC = grpc.load(__dirname + '/chord.proto').chordRPC;
 
-const M = 3;
-const MAX_ID = bignum.pow(2, 160);
+const M = 10; // finger table entries
+const MAX_ID = bignum.pow(2, 160); // must be 160 because using sha1 even though finger table has 3 entries
 const FINGER_BASE = new Array(M).fill(undefined).map((_,i) => bignum.pow(2, i));
 const R = 3;
 
@@ -284,52 +284,93 @@ async function stabilize () {
 /**
  *
  */
-async function findSuccessor (id) {
+function* closestPrecedingNode (id) {
 
-  // iterate known successors
+  // iterate finger tab;e
+  for (var i = M - 1; i > -1; i--) {
+
+    let finger = this.finger[i];
+
+    // finger table is cold
+    if (!isAddress(finger)) continue;
+
+    let fingerId = toSha1(finger);
+
+    // found a good finger
+    if (between(fingerId, this.id, id)) {
+      
+      yield finger;
+
+    }
+
+  }
+
+  // no finger is applicable so iterate successor list
   for (let successor of this.successorList) {
 
-    // found successor
-    if (between(id, this.id, toSha1(successor), false, true)) {
+    yield successor;
 
-      try {
+  }
 
-        // check alive
-        await rpc(successor, 'ping');
+}
 
-        //console.log(`found ${id.toString('hex')} for ${successor}`);
+/**
+ *
+ */
+async function findSuccessor (id) {
 
-        // break from loop
-        return { addr: successor };
+  // simple optimization
+  if (this.id.compare(id) === 0) {
 
-      // successor is dead
-      } catch (err) {
+    return { addr: this.addr };
 
-        // if err === Connect Failed or Timeout
-        // try next successor
-        continue;
-        // else throw exception
+  } else {
 
-      }
+    for (let predecessorAddr of closestPrecedingNode.call(this, id)) {
 
-    // forward to first live successor
-    } else {
+      // found successor
+      if (between(id, this.id, toSha1(predecessorAddr), false, true)) {
 
-      try {
+        try {
 
-        // check alive and forward
-        successor = await rpc(successor, 'findSuccessor', { id });
+          // check alive
+          await rpc(predecessorAddr, 'ping');
 
-        // break form loop
-        return successor;
+          // break from outer loop
+          return { addr: predecessorAddr };
 
-      // successor is dead
-      } catch (err) {
+        // successor is dead
+        } catch (err) {
 
-        // if err === Connect Failed or Timeout
-        // try next successor
-        continue;
-        // else throw exception
+          // if err === Connect Failed or Timeout
+          // try next successor
+          continue;
+          // else throw exception
+
+        }
+
+      // forward to first live successor
+      } else {
+
+        try {
+
+          console.log(`findSuccessor calling... ${predecessorAddr}`);
+
+          // check alive and forward
+          let successor = await rpc(predecessorAddr, 'findSuccessor', { id });
+
+          // break from outer loop
+          return successor;
+
+        // successor is dead
+        } catch (err) {
+
+          // if err === Connect Failed or Timeout
+          // try next successor
+          continue;
+          // else throw exception
+
+        }
 
       }
 
@@ -345,7 +386,7 @@ async function findSuccessor (id) {
 /**
  *
  */
-function onGetPredecessor (call, cb) {
+function onGetPredecessorRequest (call, cb) {
 
   var res = {};
 
@@ -360,7 +401,7 @@ function onGetPredecessor (call, cb) {
 /**
  *
  */
-function onGetSuccessorList (call, cb) {
+function onGetSuccessorListRequest (call, cb) {
 
   cb(null, { addrs: this.successorList });
 
@@ -369,15 +410,15 @@ function onGetSuccessorList (call, cb) {
 /**
  *
  */
-async function onFindSuccessor (call, cb) {
-
-  var id = call.request.id;
+async function onFindSuccessorRequest (call, cb) {
 
   try {
 
-    let res = await findSuccessor.call(this, id);
+    let successor = await findSuccessor.call(this, call.request.id);
 
-    cb(null, res);
+    console.log(`onFindSuccessor return... ${successor.addr}`);
+
+    cb(null, successor);
 
   } catch (err) {
 
@@ -390,7 +431,7 @@ async function onFindSuccessor (call, cb) {
 /**
  *
  */
-function onEcho (call, cb) {
+function onEchoRequest (call, cb) {
 
   this.emit('echo', call.request);
 
@@ -401,7 +442,7 @@ function onEcho (call, cb) {
 /**
  *
  */
-function onPing (call, cb) {
+function onPingRequest (call, cb) {
 
   cb(null, call.request);
 
@@ -410,7 +451,7 @@ function onPing (call, cb) {
 /**
  *
  */
-function onNotify (call, cb) {
+function onNotifyRequest (call, cb) {
 
   try {
     
@@ -429,7 +470,7 @@ function onNotify (call, cb) {
 /**
  *
  */
-function onGet (call, cb) {
+function onGetRequest (call, cb) {
 
   var id = call.request.id;
   
@@ -437,7 +478,7 @@ function onGet (call, cb) {
 
   if (this.bucket.hasOwnProperty(idStr)) {
 
-    cb(null, { val: this.bucket[idStr]}); 
+    cb(null, { val: this.bucket[idStr] }); 
 
   } else {
 
@@ -450,13 +491,13 @@ function onGet (call, cb) {
 /**
  *
  */
-function onSet (call, cb) {
+function onSetRequest (call, cb) {
 
   var id = call.request.id;
   
   var idStr = id.toString('hex');
   
-  var val = call.request.val;
+  var val = call.request.val.toString('utf8');
 
   // TODO handle some error here and cb(new Error())
 
@@ -469,12 +510,50 @@ function onSet (call, cb) {
 /**
  *
  */
-function onGetAll (call, cb) {}
+function onGetAllRequest (call, cb) {
+
+  var bucketEntries = [];
+
+  for (let idStr in this.bucket) {
+
+    let id = Buffer.from(idStr, 'hex');
+
+    if (between(id, toSha1(this.predecessor), call.request.id, false, true)) {
+
+      let val = Buffer.from(this.bucket[idStr], 'utf8');
+
+      bucketEntries.push({ id, val });
+
+      delete this.bucket[idStr];
+
+    }
+
+  }
+
+  cb(null, bucketEntries);
+
+}
 
 /**
  *
  */
-function onSetAll (call, cb) {}
+function onSetAllRequest (call, cb) {
+
+  for (let entry of call.request.bucketEntries) {
+
+    var idStr = entry.id.toString('hex');
+  
+    var val = entry.val;
+
+    this.bucket[idStr] = val.toString();
+
+  }
+  
+  // TODO handle some error here and cb(new Error())
+
+  cb(null);
+
+}
 
 /**
  *
@@ -510,16 +589,16 @@ class Peer extends EventEmitter {
 
     // start RPC server
     this.server = listen(this.addr, {
-      getPredecessor: onGetPredecessor.bind(this),
-      getSuccessorList: onGetSuccessorList.bind(this),
-      findSuccessor: onFindSuccessor.bind(this),
-      echo: onEcho.bind(this),
-      ping: onPing.bind(this),
-      notify: onNotify.bind(this),
-      get: onGet.bind(this),
-      set: onSet.bind(this),
-      getAll : onGetAll.bind(this),
-      setAll: onSetAll.bind(this)
+      getPredecessor: onGetPredecessorRequest.bind(this),
+      getSuccessorList: onGetSuccessorListRequest.bind(this),
+      findSuccessor: onFindSuccessorRequest.bind(this),
+      echo: onEchoRequest.bind(this),
+      ping: onPingRequest.bind(this),
+      notify: onNotifyRequest.bind(this),
+      get: onGetRequest.bind(this),
+      set: onSetRequest.bind(this),
+      getAll : onGetAllRequest.bind(this),
+      setAll: onSetAllRequest.bind(this)
     });
 
     // periodic 
@@ -601,15 +680,23 @@ class Peer extends EventEmitter {
     // bootstrap steps (do not wait for stabilize)
     try {
 
-      let successor = await rpc(addr, 'findSuccessor', { id: this.id });
+      let findSuccessor = await rpc(addr, 'findSuccessor', { id: this.id });
 
-      let predecessor = await rpc(successor.addr, 'getPredecessor');
+      let getAll = await rpc(findSuccessor.addr, 'getAll', { id: this.id });
 
-      let successorList = await rpc(predecessor.addr, 'getSuccessorList');
+      for (let entry of getAll.bucketEntries) {
 
-      this.successorList = successorList.addrs;
+        this.bucket[entry.id.toString('hex')] = entry.val.toString();
 
-      this.predecessor = predecessor.addr;
+      }
+
+      let getPredecessor = await rpc(findSuccessor.addr, 'getPredecessor');
+
+      let getSuccessorList = await rpc(getPredecessor.addr, 'getSuccessorList');
+
+      this.successorList = getSuccessorList.addrs;
+
+      this.predecessor = getPredecessor.addr;
 
 
     } catch (err) {
@@ -617,6 +704,53 @@ class Peer extends EventEmitter {
       throw new Error('Join Failure' + err);
 
     }
+
+  }
+
+  /**
+   *
+   */
+  async leave () {
+
+    var bucketEntries = [];
+
+    for (let idStr in this.bucket) {
+      let id = Buffer.from(idStr, 'hex');
+      let val = Buffer.from(this.bucket[idStr], 'utf8');
+      bucketEntries.push({ id, val });
+    }
+
+    try {
+
+      //let successor = await findSuccessor.call(this, this.id);
+
+      await rpc(this.successorList[0], 'setAll', { bucketEntries });
+
+    } catch (err) {
+
+      console.log('leave::setAll', err);
+
+    }
+
+  }
+
+  shutdown () {
+
+    return new Promise((resolve, reject) => {
+
+      this.server.tryShutdown(() => {
+
+        // TODO check err and reject, do not clearInterval, etc.
+
+        clearInterval(this.timeout);
+
+        // TODO unbind all events
+
+        resolve();
+
+      });  
+
+    });
 
   }
 
@@ -660,7 +794,7 @@ class Peer extends EventEmitter {
 
     var id = toSha1(key);
 
-    var val = Buffer.from(val);
+    var val = Buffer.from(val, 'utf8');
 
     var res;
 
@@ -683,31 +817,6 @@ class Peer extends EventEmitter {
       console.log("set::set", err);
 
     }
-
-    return res;
-
-  }
-
-  /**
-   *
-   */
-  shutdown () {
-
-    return new Promise((resolve, reject) => {
-
-      this.server.tryShutdown(() => {
-
-        // TODO check err and reject, do not clearInterval, etc.
-
-        clearInterval(this.timeout);
-
-        // TODO unbind all events
-
-        resolve({ addr: this.addr, id: this.id });
-
-      });  
-
-    });
 
   }
 
