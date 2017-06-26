@@ -14,11 +14,12 @@ function printHelp () {
               'ping <address>              Ping remote node\n',
               'join <address>              Add this node to a network\n',
               'leave                       Remove this node from network\n',
-              'get <key>                   Find value in network\n',
-              'set <key> <val ...>         Update key in network\n',
+              'get <key>                   Find value in network\n', // read
+              'set <key> <value ...>       Update key in network\n', // create, update
+              'delete <key>                Delete key in network\n', // delete
               'info                        Output info about this node\n',
-              'clear                       Clear the terminal screen\n',
               'quit                        Exit CLI immediately\n',
+              'clear                       Clear the terminal screen\n',
               'help                        Display command help');
 }
 
@@ -79,15 +80,15 @@ rl.on('line', (line) => {
 
     case 'create':
 
-        if (peer) {
- 
-          peer.shutdown();
+      if (peer) {
 
-          peer = undefined;
+        peer.shutdown();
 
-          rl.prompt();
+        peer = undefined;
 
-        } else {
+        rl.prompt();
+
+      } else {
 
         (async () => {
 
@@ -120,12 +121,8 @@ rl.on('line', (line) => {
         console.log('node uninitialized');
 
       } else {
-      
-        var addr = args[0];
 
-        var msg = args.slice(1).join(' ');
-
-        peer.echo(addr, msg);
+        peer.echo(args[0], args.slice(1).join(' '));
 
       }   
 
@@ -147,9 +144,9 @@ rl.on('line', (line) => {
         
         (async () => {
 
-          var res = await peer.ping(addr);
+          var pingResponse = await peer.ping(addr);
         
-          console.log(`PING ${addr} ${(res.dif.nans / 1e6).toPrecision(3)} ms`);          
+          console.log(`PING ${addr} ${(pingResponse.dif.nans / 1e6).toPrecision(3)} ms`);          
 
           rl.prompt();
 
@@ -205,9 +202,9 @@ rl.on('line', (line) => {
               
         (async () => {
           
-          var res = await peer.get(args[0]);
+          var getResponse = await peer.get(args[0]);
 
-          console.log(`GET ${res.val}`);
+          console.log(`GET ${getResponse.val}`);
           
           rl.prompt();
 
@@ -229,9 +226,7 @@ rl.on('line', (line) => {
         
         (async () => {
 
-          var val = args.slice(1).join(' ');
-
-          await peer.set(args[0], val);
+          var setResponse = await peer.set(args[0], args.slice(1).join(' '));
         
           //console.log(`SET ${args[0]} -> ${val}`); 
 
@@ -241,6 +236,30 @@ rl.on('line', (line) => {
 
       }
       
+      break;
+
+    case 'delete':
+
+      if (!peer) {
+
+        console.log('node uninitialized');
+
+        rl.prompt();
+
+      } else {
+              
+        (async () => {
+          
+          var deleteResponse = await peer.delete(args[0]);
+
+          console.log(`DELETE ${args[0]}`);
+          
+          rl.prompt();
+
+        })();
+
+      }
+
       break;
 
     case 'info':
@@ -257,14 +276,6 @@ rl.on('line', (line) => {
 
       rl.prompt();
       
-      break;
-     
-    case 'clear':
-
-      process.stdout.write('\033c');
-      
-      rl.prompt();
-
       break;
 
     case 'quit':
@@ -286,6 +297,14 @@ rl.on('line', (line) => {
         })();
 
       }
+
+      break;
+     
+    case 'clear':
+
+      process.stdout.write('\033c');
+      
+      rl.prompt();
 
       break;
 

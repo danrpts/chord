@@ -6,9 +6,16 @@ const EventEmitter = require('events').EventEmitter;
 const Buffer = require('buffer').Buffer;
 const chordRPC = grpc.load(__dirname + '/chord.proto').chordRPC;
 
-const M = 10; // finger table entries
-const MAX_ID = bignum.pow(2, 160); // must be 160 because using sha1 even though finger table has 3 entries
+// finger list length
+const M = 10; 
+
+// 160 because using SHA1 hash function
+const MAX_ID = bignum.pow(2, 160);
+
+// precomputed powers of 2
 const FINGER_BASE = new Array(M).fill(undefined).map((_,i) => bignum.pow(2, i));
+
+// successor list length
 const R = 3;
 
 /**
@@ -456,6 +463,9 @@ function onNotifyRequest (call, cb) {
   try {
     
     rectify.call(this, call.request);
+
+    // TODO
+    // - return status code
   
     cb(null);
 
@@ -478,7 +488,10 @@ function onGetRequest (call, cb) {
 
   if (this.bucket.hasOwnProperty(idStr)) {
 
-    cb(null, { value: this.bucket[idStr] }); 
+    cb(null, { value: this.bucket[idStr] });
+
+    // TODO
+    // - return status code
 
   } else {
 
@@ -501,9 +514,37 @@ function onSetRequest (call, cb) {
 
   this.bucket[idStr] = value;
 
-  // TODO handle error
+  // TODO
+  // - handle error
+  // - return status code
 
   cb(null); 
+
+}
+
+/**
+ *
+ */
+function onDeleteRequest (call, cb) {
+
+  var id = call.request.id;
+
+  var idStr = id.toString('hex');
+
+  if (this.bucket.hasOwnProperty(idStr)) {
+
+    delete this.bucket[idStr];
+
+    // TODO
+    // - return status code
+
+    cb(null);
+
+  } else {
+
+    cb(new Error('invalid key'));
+
+  }
 
 }
 
@@ -530,6 +571,9 @@ function onGetAllRequest (call, cb) {
 
   }
 
+  // TODO
+  // - return status code
+
   cb(null, bucketEntries);
 
 }
@@ -549,7 +593,9 @@ function onSetAllRequest (call, cb) {
 
   }
   
-  // TODO handle error
+  // TODO
+  // - handle error
+  // - return status code
 
   cb(null);
 
@@ -613,6 +659,8 @@ class Peer extends EventEmitter {
       get: onGetRequest.bind(this),
     
       set: onSetRequest.bind(this),
+
+      delete: onDeleteRequest.bind(this),     
     
       getAll : onGetAllRequest.bind(this),
     
@@ -655,7 +703,7 @@ class Peer extends EventEmitter {
 
     } catch (err) {
 
-      console.log('echo::echo', err);
+      console.log('echo::rpc::echo', err);
 
     }
 
@@ -686,7 +734,7 @@ class Peer extends EventEmitter {
 
     } catch (err) {
     
-      console.log("ping::ping", err);
+      console.log("ping::rpc::ping", err);
 
     }
 
@@ -743,7 +791,7 @@ class Peer extends EventEmitter {
       let value = Buffer.from(this.bucket[idStr], 'utf8');
       
       bucketEntries.push({ id, value });
-    
+
     }
 
     try {
@@ -758,6 +806,15 @@ class Peer extends EventEmitter {
 
     }
 
+    // TODO
+    // - first on self: send s = this.successorList[R-1] to predecessor
+    // - then on predecessor: remove s from successor list
+    // - then on predecessor: push (last successor) to successor list
+    
+    // TODO
+    // - first on self: send p = this.predecessor to successor
+    // - then on successor: replace predecessor with p
+
   }
 
   shutdown () {
@@ -768,7 +825,8 @@ class Peer extends EventEmitter {
 
       this.server.tryShutdown(err => {
 
-        // TODO unbind all events
+        // TODO
+        // - unbind all events
 
         if (err) {
 
@@ -856,6 +914,38 @@ class Peer extends EventEmitter {
 
   }
 
+  async delete (key) {
+
+    var id = toSha1(key);
+
+    var findSuccessorResponse;
+
+    var deleteResponse;
+
+    try {
+
+      findSuccessorResponse = await findSuccessor.call(this, id);
+
+    } catch (err) {
+    
+      console.log("delete::findSuccessor", err);
+
+    }
+
+    try {
+
+      deleteResponse = await rpc(findSuccessorResponse.addr, 'delete', { id });
+
+    } catch (err) {
+    
+      console.log("delete::rpc::delete", err);
+
+    }
+
+    return deleteResponse;
+
+  }
+
   /**
    *
    */
@@ -883,6 +973,11 @@ class Peer extends EventEmitter {
 
 }
 
+function createPeer (port, options) {
+  return new Peer(port, options);
+}
+
 module.exports = {
-  Peer
+  Peer,
+  createPeer
 }
