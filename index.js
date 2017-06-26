@@ -7,9 +7,31 @@ function printUsage () {
               '            <command> [<args>]\n');
 }
 
+function printInfo (peer) {
+  var info = '';
+  info += ` <Predecessor> ${(peer.predecessor) ? peer.predecessor : ''}\n`;
+  info += ` <Self> ${peer.addr}\n`;
+  
+  var successorList = peer.successorList;
+  for (let i in peer.successorList) {
+    info += ` <Successor ${i}> ${successorList[i]}\n`;
+  }
+
+  for (let idStr in peer.bucket) {
+    info += ` <Bucket ${idStr}> ${peer.bucket[idStr].toString('utf8')}\n`;
+  }
+
+  var finger = peer.finger
+  for (let i in finger) {
+    info += ` <Finger ${i}> ${finger[i]}\n`;
+  }
+
+  console.log(info);
+}
+
 function printHelp () {
   console.log('Commands are:\n\n',
-              'create [-p <port>]          Initialize this node\n',
+              'create [port]               Initialize this node\n',
               'echo <address> [arg ...]    Output to remote node\n',
               'ping <address>              Ping remote node\n',
               'join <address>              Add this node to a network\n',
@@ -55,7 +77,7 @@ const rl = readline.createInterface({
 
   output: process.stdout,
 
-  prompt: "# "
+  prompt: "> "
 
 });
 
@@ -82,7 +104,9 @@ rl.on('line', (line) => {
 
       if (peer) {
 
-        peer.shutdown();
+        peer.close();
+
+        peer.removeListener('echo');
 
         peer = undefined;
 
@@ -92,9 +116,7 @@ rl.on('line', (line) => {
 
         (async () => {
 
-          args = minimist(args);
-
-          peer = new dht.Peer(args.p);
+          peer = dht.createPeer(args[0]);
 
           peer.on('echo', getEcho => {
 
@@ -270,7 +292,7 @@ rl.on('line', (line) => {
 
       } else {
       
-        console.log(peer.toString());
+        printInfo(peer);
         
       }
 
@@ -288,7 +310,9 @@ rl.on('line', (line) => {
 
         (async () => {
 
-          peer.shutdown();
+          peer.close();
+
+          peer.removeListener('echo');
 
           peer = undefined;
 

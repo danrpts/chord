@@ -18,6 +18,8 @@ const FINGER_BASE = new Array(M).fill(undefined).map((_,i) => bignum.pow(2, i));
 // successor list length
 const R = 3;
 
+const STATUS_CODES = {};
+
 /**
  *
  */
@@ -61,27 +63,6 @@ function rpc (addr, method, req) {
     });
 
   });
-
-}
-
-/**
- *
- */
-function listen (addr, api) {
-
-  if (!isAddress(addr)) {
-    return new Error('"addr" argument must be compact IP-address:port');
-  }
-
-  var server = new grpc.Server();
-  
-  server.addService(chordRPC.service, api);
-  
-  server.bind(addr, grpc.ServerCredentials.createInsecure());
-
-  server.start();
-
-  return server;
 
 }
 
@@ -613,6 +594,8 @@ class Peer extends EventEmitter {
 
     super();
 
+    if (!(this instanceof Peer)) return new Peer(port, options);
+
     // _.defaults(options, {
 
     //   bucketKeyEncoding: 'hex',
@@ -639,10 +622,21 @@ class Peer extends EventEmitter {
 
     this.successorList.fill('');
 
+    // immediate successor
     this.successorList[0] = this.addr;
 
-    // start RPC server
-    this.server = listen(this.addr, {
+    // local bucket storage
+    this.bucket = {};
+
+    this.finger = new Array(M);
+
+    this.finger.fill('');
+
+    this.iFinger = 0;
+
+    this.server = new grpc.Server();
+    
+    this.server.addService(chordRPC.service, {
   
       getPredecessor: onGetPredecessorRequest.bind(this),
   
@@ -667,6 +661,10 @@ class Peer extends EventEmitter {
       setAll: onSetAllRequest.bind(this)
     
     });
+    
+    this.server.bind(this.addr, grpc.ServerCredentials.createInsecure());
+
+    this.server.start();
 
     // periodic 
     this.timeout = setInterval(() => {
@@ -678,15 +676,6 @@ class Peer extends EventEmitter {
         stabilize.call(this);
     
     }, 1000);
-
-    // local bucket storage
-    this.bucket = {};
-
-    this.finger = new Array(M);
-
-    this.finger.fill('');
-
-    this.iFinger = 0;
 
   }
 
@@ -747,6 +736,9 @@ class Peer extends EventEmitter {
    */
   async join (addr) {
 
+    // TODO
+    // - check if already joined
+
     // bootstrap steps (do not wait for stabilize)
     try {
 
@@ -782,6 +774,9 @@ class Peer extends EventEmitter {
    */
   async leave () {
 
+    // TODO
+    // - check if not joined
+
     var bucketEntries = [];
 
     for (let idStr in this.bucket) {
@@ -814,35 +809,6 @@ class Peer extends EventEmitter {
     // TODO
     // - first on self: send p = this.predecessor to successor
     // - then on successor: replace predecessor with p
-
-  }
-
-  shutdown () {
-
-    this.leave();
-
-    return new Promise((resolve, reject) => {
-
-      this.server.tryShutdown(err => {
-
-        // TODO
-        // - unbind all events
-
-        if (err) {
-
-          reject(err);
-
-        } else {
-
-          clearInterval(this.timeout);
-
-          resolve();
-
-        }
-
-      });  
-
-    });
 
   }
 
@@ -892,6 +858,8 @@ class Peer extends EventEmitter {
 
     var findSuccessorResponse;
 
+    var setResponse;
+
     try {
 
       findSuccessorResponse = await findSuccessor.call(this, id);
@@ -904,13 +872,15 @@ class Peer extends EventEmitter {
 
     try {
 
-      await rpc(findSuccessorResponse.addr, 'set', { id, value });
+      setResponse = await rpc(findSuccessorResponse.addr, 'set', { id, value });
 
     } catch (err) {
     
       console.log("set::rpc::set", err);
 
     }
+
+    return setResponse;
 
   }
 
@@ -949,27 +919,34 @@ class Peer extends EventEmitter {
   /**
    *
    */
-  toString (b) {
+  close () {
 
-    var str = '';
+    this.leave();
 
-    str += `<Predecessor> ${(this.predecessor) ? this.predecessor : ''}\n`;
+    return new Promise((resolve, reject) => {
 
-    str += `<Self> ${this.addr}\n`;
+      this.server.tryShutdown(err => {
 
-    for (let i = 0; i < this.successorList.length; i++) {
-      str += `<Successor ${i}> ${this.successorList[i]}\n`;
-    }
+        // TODO
+        // - unbind all events
 
-    for (let idStr in this.bucket) str += `<Bucket ${idStr}> ${this.bucket[idStr].toString('utf8')}\n`;
+        if (err) {
 
-    for (let i = 0; i < this.finger.length; i++) {
-      str += `<Finger ${i}> ${this.finger[i]}\n`;
-    }
+          reject(err);
 
-    return str;
+        } else {
 
-  }
+          clearInterval(this.timeout);
+
+          resolve();
+
+        }
+
+      });  
+
+    });
+
+  } 
 
 }
 
@@ -978,6 +955,7 @@ function createPeer (port, options) {
 }
 
 module.exports = {
+  STATUS_CODES,
   Peer,
   createPeer
 }
