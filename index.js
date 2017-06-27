@@ -110,29 +110,23 @@ rl.on('line', (line) => {
 
         peer = undefined;
 
-        rl.prompt();
-
       } else {
 
-        (async () => {
+        peer = dht.createPeer(args[0]);
 
-          peer = dht.createPeer(args[0]);
+        peer.on('echo', getEcho => {
 
-          peer.on('echo', getEcho => {
-
-            console.log(`\nECHO ${getEcho.addr} (${getEcho.msg})`);
-
-            rl.prompt();
-
-          });
-
-          console.log(`CREATE ${peer.addr} (${peer.id.toString('hex')})`);
+          console.log(`\nECHO ${getEcho.addr} (${getEcho.msg})`);
 
           rl.prompt();
 
-        })();
+        });
+
+        console.log(`CREATE ${peer.addr} (${peer.id.toString('hex')})`);
 
       }
+
+      rl.prompt();
 
       break;
 
