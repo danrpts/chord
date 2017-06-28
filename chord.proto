@@ -6,8 +6,8 @@ service chordRPC {
   rpc getSuccessorList (empty) returns (getSuccessorListResponse) {}
   rpc findSuccessor (findSuccessorRequest) returns (findSuccessorResponse) {}
 
+  rpc ping (empty) returns (empty) {}
   rpc echo (echoRequest) returns (empty) {}
-  rpc ping (timestamp) returns (timestamp) {}
   rpc notify (notifyRequest) returns (empty) {}
   rpc get (getRequest) returns (getResponse) {}
   rpc set (setRequest) returns (empty) {}
@@ -16,16 +16,11 @@ service chordRPC {
   rpc setAll(setAllRequest) returns (empty) {}
 }
 
+message empty {}
+
 message echoRequest {
   string msg = 1;
   string addr = 2;
-}
-
-message empty {}
-
-message timestamp {
-  int64 secs = 1;
-  int32 nans = 2;
 }
 
 message getPredecessorResponse {

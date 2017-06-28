@@ -210,53 +210,43 @@ async function rectify (notifier) {
  */
 async function stabilize () {
 
-  // begin stabilize from successor
   try {
 
+    let successor = this.successorList[0];
+
+    // get successor's predecessor and call it p (potential new predecessor)
+    let p = await rpc(successor, 'getPredecessor');
+
+    if (isAddress(p.addr) // check p is defined and in between this node and successor
+    && between(toSha1(p.addr), this.id, toSha1(this.successorList[0]))) {
+      
+      // p is this node's successor
+      successor = p.addr;
+  
+    }
+
     // get successor's successor list and call it l
-    let l = await rpc(this.successorList[0], 'getSuccessorList');
+    let l = await rpc(successor, 'getSuccessorList');
 
     // remove Rth element
-    l.addrs.pop();
+    l.addrs = l.addrs.slice(0, R - 1);
 
     // prepend successor
-    l.addrs.unshift(this.successorList[0]);
+    l.addrs.unshift(successor);
+
+    // check if successor list is changing
+    let changed = _.difference(l.addrs, this.successorList).length > 0;
 
     // set as current successor list
     this.successorList = l.addrs;
 
-    // get successor's predecessor and call it p (potential new predecessor)
-    let p = await rpc(this.successorList[0], 'getPredecessor');
-
-    if (isAddress(p.addr) // if p is defined and in between this node and successor
-    && between(toSha1(p.addr), this.id, toSha1(this.successorList[0]))) {
-      
-      /* invariant: p is this node's successor */
-
-      // (monitoring technique: do not add invalid successor)
-
-      // begin stabilize from predecessor
-      try {
-        
-        // get p's successor list and call it l (notice let)
-        l = await rpc(p.addr, 'getSuccessorList');
-
-        // remove last element (Rth)
-        l.addrs.pop();
-
-        // prepend new successor
-        l.addrs.unshift(p.addr);
-
-        // set as current successor list
-        this.successorList = l.addrs;
-
-      // CASE: joining node has died
-      } catch (_) { /* ignore */ }
-
+    // then emit changes
+    if (changed) { 
+      this.emit('addedSuccessor');
     }
 
     // notify successor about this (refresh its predecessor)
-    rpc(this.successorList[0], 'notify', { addr: this.addr });
+    await rpc(successor, 'notify', { addr: this.addr });
 
   // CASE: immediate successor has died
   } catch (err) {
@@ -266,7 +256,7 @@ async function stabilize () {
     // TODO if err === Connect Failed or Timeout {
 
     // remove dead node
-    //this.emit('removeReplica', 0, this.successorList.shift());
+    this.emit('removedSuccessor');
 
     this.successorList.shift();
 
@@ -481,7 +471,7 @@ function onGetRequest (call, cb) {
 
   if (this.bucket.hasOwnProperty(idStr)) {
 
-    cb(null, { value: this.bucket[idStr] });
+    cb(null, { value: this.bucket[idStr] }); // return as buffer
 
     // TODO
     // - return status code
@@ -503,7 +493,7 @@ function onSetRequest (call, cb) {
   
   var idStr = id.toString('hex');
   
-  var value = call.request.value.toString('utf8');
+  var value = call.request.value; // store a buffer
 
   this.bucket[idStr] = value;
 
@@ -696,7 +686,7 @@ class Peer extends EventEmitter {
 
     } catch (err) {
 
-      console.log('echo::rpc::echo', err);
+      console.error('echo', err);
 
     }
 
@@ -711,23 +701,13 @@ class Peer extends EventEmitter {
 
     var getPingResponse;
 
-    function hrtimeObj (rel) {
-
-      var [secs, nans] = process.hrtime(rel);
-  
-      return { secs, nans };
-
-    }
-
     try {
 
-      getPingResponse = await rpc(addr, 'ping', hrtimeObj());
-
-      getPingResponse.dif = hrtimeObj([getPingResponse.secs, getPingResponse.nans]);
+      getPingResponse = await rpc(addr, 'ping');
 
     } catch (err) {
     
-      console.log("ping::rpc::ping", err);
+      console.error('ping', err);
 
     }
 
@@ -751,11 +731,7 @@ class Peer extends EventEmitter {
       // get this node's successor and call it s
       let s = await rpc(addr, 'findSuccessor', { id: this.id });
 
-      // get all owned bucket entries from successor
-      let b = await rpc(addr, 'getAll', { id: this.id });
-      for (let entry of b.bucketEntries) {
-        this.bucket[entry.id.toString('hex')] = entry.value.toString('utf8');
-      }
+      this.replicateFrom(s.addr);
 
       // get s's predecessor and call is p
       let p = await rpc(s.addr, 'getPredecessor');
@@ -790,6 +766,10 @@ class Peer extends EventEmitter {
       return;
     }
 
+    // TODO
+    // - get live successor
+    await this.replicateTo(this.successorList[0]);
+
     // reset predecessor
     this.predecessor = null;
 
@@ -798,30 +778,6 @@ class Peer extends EventEmitter {
 
     // reset immediate successor
     this.successorList[0] = this.addr;
-
-    var bucketEntries = [];
-    for (let idStr in this.bucket) {
-      let id = Buffer.from(idStr, 'hex');
-      let value = Buffer.from(this.bucket[idStr], 'utf8');
-      bucketEntries.push({ id, value });
-    }
-    
-    // TODO
-    // - do not setAll on self
-
-    var setAllResponse;
-
-    try {
-
-      //let successor = await findSuccessor.call(this, this.id);
-
-      setAllResponse = await rpc(this.successorList[0], 'setAll', { bucketEntries });
-
-    } catch (err) {
-
-      console.error('Leave Failure', err);
-
-    }
 
     // TODO
     // - first on self: send s = this.successorList[R-1] to predecessor
@@ -832,8 +788,6 @@ class Peer extends EventEmitter {
     // - first on self: send p = this.predecessor to successor
     // - then on successor: replace predecessor with p
 
-    //return setAllResponse;
-
   }
 
   /**
@@ -843,27 +797,19 @@ class Peer extends EventEmitter {
 
     var id = toSha1(key);
 
-    var findSuccessorResponse;
-
     var getResponse;
-
+    
     try {
 
-      findSuccessorResponse = await findSuccessor.call(this, id);
+      let s = await findSuccessor.call(this, id);
+
+      getResponse = await rpc(s.addr, 'get', { id });
+
+      getResponse.value = getResponse.value.toString('utf8');
 
     } catch (err) {
     
-      console.log("get::findSuccessor", err);
-
-    }
-
-    try {
-
-      getResponse = await rpc(findSuccessorResponse.addr, 'get', { id });
-
-    } catch (err) {
-    
-      console.log("get::rpc::get", err);
+      console.log('get', err);
 
     }
 
@@ -880,27 +826,19 @@ class Peer extends EventEmitter {
 
     var value = Buffer.from(value, 'utf8');
 
-    var findSuccessorResponse;
-
     var setResponse;
 
     try {
 
-      findSuccessorResponse = await findSuccessor.call(this, id);
+      let s = await findSuccessor.call(this, id);
+
+      setResponse = await rpc(s.addr, 'set', { id, value });
+
+      this.emit('set', id, value);
 
     } catch (err) {
     
-      console.log("set::findSuccessor", err);
-
-    }
-
-    try {
-
-      setResponse = await rpc(findSuccessorResponse.addr, 'set', { id, value });
-
-    } catch (err) {
-    
-      console.log("set::rpc::set", err);
+      console.error('set', err);
 
     }
 
@@ -915,31 +853,69 @@ class Peer extends EventEmitter {
 
     var id = toSha1(key);
 
-    var findSuccessorResponse;
-
     var deleteResponse;
 
     try {
 
-      findSuccessorResponse = await findSuccessor.call(this, id);
+      let s = await findSuccessor.call(this, id);
+
+      deleteResponse = await rpc(s.addr, 'delete', { id });
 
     } catch (err) {
     
-      console.log("delete::findSuccessor", err);
-
-    }
-
-    try {
-
-      deleteResponse = await rpc(findSuccessorResponse.addr, 'delete', { id });
-
-    } catch (err) {
-    
-      console.log("delete::rpc::delete", err);
+      console.error("delete", err);
 
     }
 
     return deleteResponse;
+
+  }
+
+  async replicateFrom(addr) {
+
+    if (addr === this.addr) {
+      return;
+    }
+
+    try {
+
+      let getAllResponse = await rpc(addr, 'getAll', { id: this.id });
+
+      for (let entry of getAllResponse.bucketEntries) {
+        this.bucket[entry.id.toString('hex')] = entry.value.toString('utf8');
+      }
+
+    } catch (err) {
+
+      console.error('replicateFrom', err);
+
+    }
+
+  }
+
+  async replicateTo(addr) {
+
+    if (addr === this.addr) {
+      return;
+    }
+
+    try {
+
+      let bucketEntries = [];
+
+      for (let idStr in this.bucket) {
+        let id = Buffer.from(idStr, 'hex');
+        let value = Buffer.from(this.bucket[idStr], 'utf8');
+        bucketEntries.push({ id, value });
+      }
+
+      await rpc(addr, 'setAll', { bucketEntries });
+
+    } catch (err) {
+
+      console.error('replicateTo', err);
+
+    }
 
   }
 
@@ -957,7 +933,7 @@ class Peer extends EventEmitter {
 
     this.server.tryShutdown(err => {
 
-      if (err) console.log(err);
+      if (err) console.error(err);
 
     });
   

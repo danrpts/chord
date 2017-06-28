@@ -106,22 +106,22 @@ if (argv._.length > 0 // check for invalid arguments
   });
 
   // replicate this set to successor
-  peer.on('replica', addrs => {
+  peer.on('addedSuccessor', () => {
 
-   //peer.setAll(getJoiningSuccessor.addr);
+    for (let addr of peer.successorList) {
 
-    console.log(`\n<Replica> ${addrs}`);
+      peer.replicateTo(addr);
+
+    }
 
     rl.prompt();
 
   });
 
   // replicate successor set to this
-  peer.on('removeReplica', (i, addr) => {
+  peer.on('removedSuccessor', () => {
 
-   //peer.getAll(getLeavingSuccessor.addr, { id: peer.id });
-
-    console.log(`\n<Replica -${i}> ${addr}`);
+    console.log(`\n<rem> ${peer.successorList}`);
 
     rl.prompt();
 
@@ -171,14 +171,18 @@ if (argv._.length > 0 // check for invalid arguments
         break;
 
       case 'ping':
-        
+
         var addr = args[0];
-        
+
         (async () => {
 
+          var t = process.hrtime();
+
           var pingResponse = await peer.ping(addr);
-        
-          console.log(`<Ping> ${addr} ${(pingResponse.dif.nans / 1e6).toPrecision(3)} ms`);          
+
+          t = process.hrtime(t);
+
+          console.log(`<Ping> ${addr} ${(t[1] / 1e6).toPrecision(3)} ms`);          
 
           rl.prompt();
 
@@ -217,7 +221,7 @@ if (argv._.length > 0 // check for invalid arguments
           
           var getResponse = await peer.get(args[0]);
 
-          console.log(`GET ${getResponse.val}`);
+          console.log(`<Bucket ${args[0]}> ${getResponse.value}`);
           
           rl.prompt();
 
@@ -244,8 +248,6 @@ if (argv._.length > 0 // check for invalid arguments
         (async () => {
           
           var deleteResponse = await peer.delete(args[0]);
-
-          console.log(`DELETE ${args[0]}`);
           
           rl.prompt();
 
@@ -287,7 +289,7 @@ if (argv._.length > 0 // check for invalid arguments
 
       default: 
 
-        printUsage();
+        printHelp();
 
         rl.prompt();
 
