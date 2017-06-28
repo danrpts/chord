@@ -9,9 +9,8 @@ const argv = minimist(process.argv.slice(2));
 function printUsage () {
 
   var spacer = ' '.repeat(arg0.length);
-  console.error(`Usage: ${arg0} [--version] [--help] [--fingers=<m>]`);
-  console.error(`       ${spacer} [--successors=<r>] [-k <count> | --replicas=<k>]`);
-  console.error(`       ${spacer} [-p <port>] [--join=<address>]`);
+  console.error(`Usage: ${arg0} [--version] [--help] [-p <port>]`);
+  console.error(`       ${spacer} [-k <replicas>] [--join=<address>]\n`);
 
 }
 
@@ -51,7 +50,7 @@ function printHelp () {
   console.error('echo <address> [message]          Print to remote peer.');
   console.error('info                              Print info about peer.');
   console.error('help                              Show this screen.');
-  console.error('quit                              Shutdown peer and exit.');
+  console.error('quit                              Shutdown peer and exit.\n');
 
 }
 
@@ -73,11 +72,7 @@ if (argv.version) {
 
 if (argv._.length > 0 // check for invalid arguments
 ||  _.has(argv, 'p') && !dht.isPort(argv.p) // invalid port number
-||  _.has(argv, 'fingers') && !_.isNumber(argv.m) // invalid finger count
-||  _.has(argv, 'successors') && !_.isNumber(argv.r) // invalid successor count
-||  _.has(argv, 'k') && _.has(argv, 'replicas') // redundant option
-||  _.has(argv, 'k') && !_.isNumber(argv.k) // invalid replica count
-||  _.has(argv, 'replicas') && !_.isNumber(argv.replicas) // invalid replica count
+||  _.has(argv, 'k') && !_.isNumber(argv.k) // invalid successor/replica count
 ||  _.has(argv, 'join') && !dht.isAddress(argv.join) // invalid address
 ) {
 
@@ -93,9 +88,8 @@ if (argv._.length > 0 // check for invalid arguments
 
   // TODO
   // - peer uses random port when 0
-  const port = argv.p || 0;
 
-  const peer = dht.createPeer(port);
+  const peer = dht.createPeer(argv.p, argv.k);
 
   peer.on('echo', getEcho => {
 
@@ -106,24 +100,22 @@ if (argv._.length > 0 // check for invalid arguments
   });
 
   // replicate this set to successor
-  peer.on('addedSuccessor', () => {
+  peer.on('successor', successor => {
 
-    for (let addr of peer.successorList) {
+    // replicate to new successor
 
-      peer.replicateTo(addr);
+    //peer.replicateTo(successor);
 
-    }
-
-    rl.prompt();
 
   });
 
-  // replicate successor set to this
-  peer.on('removedSuccessor', () => {
+  peer.on('set', (key, value) => {
 
-    console.log(`\n<rem> ${peer.successorList}`);
+    // for (let addr of peer.successorList) {
+    //   if (addr != peer.addr) console.log(addr);
+    // }
 
-    rl.prompt();
+    //peer.replicateTo(this.)
 
   });
 
@@ -182,7 +174,7 @@ if (argv._.length > 0 // check for invalid arguments
 
           t = process.hrtime(t);
 
-          console.log(`<Ping> ${addr} ${(t[1] / 1e6).toPrecision(3)} ms`);          
+          console.log(`<Ping ${addr}> ${(t[1] / 1e6).toPrecision(3)} ms`);          
 
           rl.prompt();
 

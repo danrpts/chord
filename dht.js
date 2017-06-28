@@ -7,7 +7,7 @@ const EventEmitter = require('events').EventEmitter;
 const Buffer = require('buffer').Buffer;
 const chordRPC = grpc.load(__dirname + '/chord.proto').chordRPC;
 
-// finger list length
+// finger list length (should be hash bit size so 160 fro sha1)
 const M = 4; 
 
 // 160 because using SHA1 hash function
@@ -16,8 +16,8 @@ const MAX_ID = bignum.pow(2, 160);
 // precomputed powers of 2
 const FINGER_BASE = new Array(M).fill(undefined).map((_,i) => bignum.pow(2, i));
 
-// successor list length
-const R = 2;
+// default successor list length and replica set size
+const R = 1;
 
 const STATUS_CODES = {};
 
@@ -218,7 +218,7 @@ async function stabilize () {
     let p = await rpc(successor, 'getPredecessor');
 
     if (isAddress(p.addr) // check p is defined and in between this node and successor
-    && between(toSha1(p.addr), this.id, toSha1(this.successorList[0]))) {
+    && between(toSha1(p.addr), this.id, toSha1(successor))) {
       
       // p is this node's successor
       successor = p.addr;
@@ -228,21 +228,40 @@ async function stabilize () {
     // get successor's successor list and call it l
     let l = await rpc(successor, 'getSuccessorList');
 
-    // remove Rth element
-    l.addrs = l.addrs.slice(0, R - 1);
+    // remove last successor
+    l.addrs = l.addrs.slice(0, this.k - 1);
 
-    // prepend successor
+    // prepend successor     
+    // * NOTE 
     l.addrs.unshift(successor);
 
-    // check if successor list is changing
-    let changed = _.difference(l.addrs, this.successorList).length > 0;
+    // NOTE
+    // - record change before updating list and emitting
+    // - this is false when this node just joining (positive side effect because it replicated from successor and do not want to emit)
+    let changed = (this.successorList[0] != l.addrs[0]);
 
-    // set as current successor list
-    this.successorList = l.addrs;
+    // borrow p's list l (at most k)
+    for (let i = 0; i < this.k; i++) {
+      
+      // l has fewer elements (at least 1)
+      if (l.addrs.length <= i)  {
+    
+        // * NOTE 
+        this.successorList[i] = this.addr;
+      
+      } else {
 
-    // then emit changes
-    if (changed) { 
-      this.emit('addedSuccessor');
+        this.successorList[i] = l.addrs[i];
+
+      }
+
+      this.successorList[i] = l.addrs[i];
+
+    }
+
+    // emit if immediate successor changed
+    if (changed) {
+      this.emit('successor', l.addrs[0]);
     }
 
     // notify successor about this (refresh its predecessor)
@@ -256,10 +275,11 @@ async function stabilize () {
     // TODO if err === Connect Failed or Timeout {
 
     // remove dead node
-    this.emit('removedSuccessor');
+    //this.emit('removedSuccessor');
 
     this.successorList.shift();
 
+    // * NOTE 
     this.successorList.push(this.addr);
 
     // NOTE
@@ -592,27 +612,34 @@ class Peer extends EventEmitter {
   /**
    *
    */
-  constructor (port, options) {
+  constructor (port, k) {
 
     super();
 
-    if (!(this instanceof Peer)) return new Peer(port, options);
+    if (!(this instanceof Peer)) {
+
+      return new Peer(port, options);
+
+    }
+
+    if (!isPort(port)) {
+      throw new Error('"port" argument must be between 1 and 65536');
+    }
 
     // set address
     this.addr = ip.address() + ':' + port;
 
-    if (!isAddress(this.addr)) {
-      throw new Error('invalid ip');
-    }
-
     // initialize node identifier
     this.id = toSha1(this.addr);
     
+    // successor list length and replica set size
+    this.k = k;
+
     // predecessor address
     this.predecessor = null;
 
     // successor list
-    this.successorList = new Array(R);
+    this.successorList = new Array(k);
 
     this.successorList.fill('');
 
@@ -744,9 +771,25 @@ class Peer extends EventEmitter {
       // set p as predecessor
       this.predecessor = p.addr;
 
-      // use p's list l
-      this.successorList = l.addrs;
+      // borrow p's list l (at most k)
+      for (let i = 0; i < this.k; i++) {
+        
+        // l has fewer elements (at least 1)
+        if (l.addrs.length <= i)  {
+        
+          // * NOTE 
+          this.successorList[i] = this.addr;
+        
+        } else {
 
+          this.successorList[i] = l.addrs[i];
+
+        }
+
+      }
+
+      // NOTE
+      // - do not emit successor change because we replicated from it
 
     } catch (err) {
     
@@ -780,7 +823,7 @@ class Peer extends EventEmitter {
     this.successorList[0] = this.addr;
 
     // TODO
-    // - first on self: send s = this.successorList[R-1] to predecessor
+    // - first on self: send s = this.successorList[this.k - 1] to predecessor
     // - then on predecessor: remove s from successor list
     // - then on predecessor: push (last successor) to successor list
     
@@ -834,7 +877,7 @@ class Peer extends EventEmitter {
 
       setResponse = await rpc(s.addr, 'set', { id, value });
 
-      this.emit('set', id, value);
+      this.emit('set', key, value);
 
     } catch (err) {
     
@@ -944,9 +987,14 @@ class Peer extends EventEmitter {
 /**
  *
  */
-function createPeer (port, options) {
+function createPeer (port, nSuccessors) {
 
-  return new Peer(port, options);
+  // TODO
+  // - random port when port is 0
+
+  nSuccessors = (nSuccessors > 0) ? nSuccessors : R;
+
+  return new Peer(port, nSuccessors);
 
 }
 
