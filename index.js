@@ -1,56 +1,59 @@
+const _ = require('underscore');
 const minimist = require('minimist');
 const readline = require('readline');
 const dht = require('./dht.js');
+const arg0 = 'chord';
+const argv = minimist(process.argv.slice(2));
+
 
 function printUsage () {
-  console.log('Usage: chord [--version] [--help]\n',
-              '            <command> [<args>]\n');
+
+  var spacer = ' '.repeat(arg0.length);
+  console.error(`Usage: ${arg0} [--version] [--help] [--fingers=<m>]`);
+  console.error(`       ${spacer} [--successors=<r>] [-k <count> | --replicas=<k>]`);
+  console.error(`       ${spacer} [-p <port>] [--join=<address>]`);
+
 }
 
 function printInfo (peer) {
+
   var info = '';
-  info += ` <Predecessor> ${(peer.predecessor) ? peer.predecessor : ''}\n`;
-  info += ` <Self> ${peer.addr}\n`;
+  info += `<Predecessor> ${(peer.predecessor) ? peer.predecessor : ''}\n`;
+  info += `<Self> ${peer.addr}\n`;
   
   var successorList = peer.successorList;
   for (let i in peer.successorList) {
-    info += ` <Successor ${i}> ${successorList[i]}\n`;
+    info += `<Successor ${i}> ${successorList[i]}\n`;
   }
 
   for (let idStr in peer.bucket) {
-    info += ` <Bucket ${idStr}> ${peer.bucket[idStr].toString('utf8')}\n`;
+    info += `<Bucket ${idStr}> ${peer.bucket[idStr].toString('utf8')}\n`;
   }
 
   var finger = peer.finger
   for (let i in finger) {
-    info += ` <Finger ${i}> ${finger[i]}\n`;
+    info += `<Finger ${i}> ${finger[i]}\n`;
   }
 
   console.log(info);
+
 }
 
 function printHelp () {
-  console.log('Commands are:\n\n',
-              'create [port]               Initialize this node\n',
-              'echo <address> [arg ...]    Output to remote node\n',
-              'ping <address>              Ping remote node\n',
-              'join <address>              Add this node to a network\n',
-              'leave                       Remove this node from network\n',
-              'get <key>                   Find value in network\n', // read
-              'set <key> <value ...>       Update key in network\n', // create, update
-              'delete <key>                Delete key in network\n', // delete
-              'info                        Output info about this node\n',
-              'quit                        Exit CLI immediately\n',
-              'clear                       Clear the terminal screen\n',
-              'help                        Display command help');
+
+  console.error('Commands:');
+  console.error('join <address>                    Add peer to network.');
+  console.error('leave                             Remove peer from network.');
+  console.error('get <key> [-e <encoding>]         Read with encoding. (Default utf8)');
+  console.error('set <key> <value> [-e <encoding>] Create/update with encoding. (Default utf8)');
+  console.error('delete <key>                      Delete key and value.');
+  console.error('ping <address>                    Ping remote peer.');
+  console.error('echo <address> [message]          Print to remote peer.');
+  console.error('info                              Print info about peer.');
+  console.error('help                              Show this screen.');
+  console.error('quit                              Shutdown peer and exit.');
+
 }
-
-
-// TODO
-// change slice later
-// note the let
-// input args from node command
-var argv = minimist(process.argv.slice(2));
 
 if (argv.version) {
 
@@ -68,154 +71,148 @@ if (argv.version) {
 
 }
 
-// begin cli
-var peer = null;
+if (argv._.length > 0 // check for invalid arguments
+||  _.has(argv, 'p') && !dht.isPort(argv.p) // invalid port number
+||  _.has(argv, 'fingers') && !_.isNumber(argv.m) // invalid finger count
+||  _.has(argv, 'successors') && !_.isNumber(argv.r) // invalid successor count
+||  _.has(argv, 'k') && _.has(argv, 'replicas') // redundant option
+||  _.has(argv, 'k') && !_.isNumber(argv.k) // invalid replica count
+||  _.has(argv, 'replicas') && !_.isNumber(argv.replicas) // invalid replica count
+||  _.has(argv, 'join') && !dht.isAddress(argv.join) // invalid address
+) {
 
-const rl = readline.createInterface({
+  // TODO
+  // - check invalid options
 
-  input: process.stdin,
+  printUsage(arg0);
 
-  output: process.stdout,
+  process.exit(1);
 
-  prompt: "> "
+// start cli
+} else {
 
-});
+  // TODO
+  // - peer uses random port when 0
+  const port = argv.p || 0;
 
-rl.prompt();
+  const peer = dht.createPeer(port);
 
-rl.on('line', (line) => {
+  peer.on('echo', getEcho => {
 
-  if (!line) {
+    console.log(`\n<Echo ${getEcho.addr}> ${getEcho.msg}`);
 
     rl.prompt();
 
-    return;
+  });
+
+  // replicate this set to successor
+  peer.on('replica', addrs => {
+
+   //peer.setAll(getJoiningSuccessor.addr);
+
+    console.log(`\n<Replica> ${addrs}`);
+
+    rl.prompt();
+
+  });
+
+  // replicate successor set to this
+  peer.on('removeReplica', (i, addr) => {
+
+   //peer.getAll(getLeavingSuccessor.addr, { id: peer.id });
+
+    console.log(`\n<Replica -${i}> ${addr}`);
+
+    rl.prompt();
+
+  });
+
+  const rl = readline.createInterface({
+
+    input: process.stdin,
+
+    output: process.stdout,
+
+    prompt: "> "
+
+  });
+
+  if (argv.join) {
+
+    peer.join(argv.join);
 
   }
 
-  let [cmd, ...args] = line.trim().split(' ');
+  rl.prompt();
 
-  // TODO
-  // handle empty line
+  rl.on('line', (line) => {
 
-  switch (cmd) {
-
-    case 'create':
-
-      if (peer) {
-
-        peer.close();
-
-        peer.removeListener('echo');
-
-        peer = undefined;
-
-      } else {
-
-        peer = dht.createPeer(args[0]);
-
-        peer.on('echo', getEcho => {
-
-          console.log(`\nECHO ${getEcho.addr} (${getEcho.msg})`);
-
-          rl.prompt();
-
-        });
-
-        console.log(`CREATE ${peer.addr} (${peer.id.toString('hex')})`);
-
-      }
-
+    if (!line) {
+      
       rl.prompt();
+      
+      return;
 
-      break;
+    }
 
-    case 'echo': 
+    let [command, ...args] = line.trim().split(' ');
 
-     if (!peer) {
+    // TODO
+    // handle empty line
 
-        console.log('node uninitialized');
+    switch (command) {
 
-      } else {
+      case 'echo': 
 
         peer.echo(args[0], args.slice(1).join(' '));
 
-      }   
-
-      rl.prompt();
-
-      break;
-
-    case 'ping':
-
-      if (!peer) {
-
-        console.log('node uninitialized');
-      
         rl.prompt();
 
-      } else {
-      
+        break;
+
+      case 'ping':
+        
         var addr = args[0];
         
         (async () => {
 
           var pingResponse = await peer.ping(addr);
         
-          console.log(`PING ${addr} ${(pingResponse.dif.nans / 1e6).toPrecision(3)} ms`);          
+          console.log(`<Ping> ${addr} ${(pingResponse.dif.nans / 1e6).toPrecision(3)} ms`);          
 
           rl.prompt();
 
         })();
 
-      }
+        break;
 
-      break;
+      case 'join':
 
-    case 'join':
-
-      if (!peer) {
-
-        console.log('node uninitialized');
-
-      } else {
+        // TODO
+        // - check !isJoined() 
+        // - maybe use m,r,k params as network id hash
 
         args = minimist(args);
         
         peer.join(args._[0]);
 
-      }
+        rl.prompt();
+        
+        break;
 
-      rl.prompt();
-      
-      break;
+      case 'leave':
 
-    case 'leave':
-
-      if (!peer) {
-
-        console.log('node uninitialized');
-
-      } else {
+        // TODO
+        // - check isJoined() 
 
         peer.leave();
 
-      }
-
-      rl.prompt();
-
-      break;
-
-    case 'get':
-
-      if (!peer) {
-
-        console.log('node uninitialized');
-
         rl.prompt();
 
-      } else {
-              
+        break;
+
+      case 'get':
+                
         (async () => {
           
           var getResponse = await peer.get(args[0]);
@@ -226,20 +223,10 @@ rl.on('line', (line) => {
 
         })();
 
-      }
+        break;
 
-      break;
-
-    case 'set':
-
-      if (!peer) {
-
-        console.log('node uninitialized');
-
-        rl.prompt();
-
-      } else {
-        
+      case 'set':
+          
         (async () => {
 
           var setResponse = await peer.set(args[0], args.slice(1).join(' '));
@@ -249,21 +236,11 @@ rl.on('line', (line) => {
           rl.prompt();
 
         })();
+        
+        break;
 
-      }
-      
-      break;
+      case 'delete':
 
-    case 'delete':
-
-      if (!peer) {
-
-        console.log('node uninitialized');
-
-        rl.prompt();
-
-      } else {
-              
         (async () => {
           
           var deleteResponse = await peer.delete(args[0]);
@@ -274,83 +251,56 @@ rl.on('line', (line) => {
 
         })();
 
-      }
+        break;
 
-      break;
-
-    case 'info':
-
-      if (!peer) {
-
-        console.log('node uninitialized');
-
-      } else {
-      
-        printInfo(peer);
+      case 'info':
         
-      }
+        printInfo(peer);
 
-      rl.prompt();
-      
-      break;
+        rl.prompt();
+        
+        break;
 
-    case 'quit':
+      case 'quit':
 
-      if (!peer) {
+        peer.close();
 
         process.exit(0);
 
-      } else {
+        break;
+       
+      case 'clear':
 
-        (async () => {
+        process.stdout.write('\033c');
+        
+        rl.prompt();
 
-          peer.close();
+        break;
 
-          peer.removeListener('echo');
+      case 'help':
 
-          peer = undefined;
+        printHelp();
 
-          process.exit(0);
+        rl.prompt();
 
-        })();
+        break;
 
-      }
+      default: 
 
-      break;
-     
-    case 'clear':
+        printUsage();
 
-      process.stdout.write('\033c');
-      
-      rl.prompt();
+        rl.prompt();
 
-      break;
+        break;
+    
+    }
 
-    case 'help':
+  });
 
-      printHelp();
+  rl.on('close', () => {
+    
+    process.exit(0);
 
-      rl.prompt();
+  });
 
-      break;
-
-    default: 
-
-      printHelp();
-
-      rl.prompt();
-
-      break;
-  
-  }
-
-});
-
-rl.on('close', () => {
-  
-  process.exit(0);
-
-});
-
-if (argv._.length) rl.write(process.argv.slice(2).join(' ') + '\n');
-
+}
