@@ -37,13 +37,54 @@ function isPort (port) {
 /**
  *
  */
-function isAddress (addr) {
+function isAddress (address) {
 
-  if (!_.isString(addr)) return false;
+  if (!_.isString(address)) return false;
 
-  const [ip4, port] = addr.trim().split(':');
+  const [ip4, port] = address.trim().split(':');
 
   return isPort(parseInt(port)) && ip.isV4Format(ip4);
+
+}
+
+/**
+ *
+ */
+function get (peer, key) {
+
+  if (!Peer.isPeer(peer) && !Peer.isJoined(peer)) {
+    return new Error('"peer" argument must be joined peer');
+  }
+
+  if (!isString(key)) {
+      return new Error('"key" argument must be string');
+  }
+
+  // TODO
+  // - use as DHT api instead of peer methods
+
+}
+
+/**
+ *
+ */
+function set (peer, key, value) {
+
+  if (!isPeer(peer) && !Peer.isJoined(peer)) {
+    return new Error('"peer" argument must be joined peer');
+  }
+
+
+  if (!isString(key)) {
+      return new Error('"key" argument must be string');
+  }
+
+  if (!Buffer.isBuffer(value)) {
+      return new Error('"value" argument must be buffer');
+  } 
+
+  // TODO
+  // - use as DHT api instead of peer methods
 
 }
 
@@ -152,7 +193,7 @@ async function fixFingers () {
     var s = await findSuccessor.call(this, id);
 
     // update finger table entry
-    this.finger[this.iFinger] = s.addr;
+    this.finger[this.iFinger] = s.address;
 
   } catch (err) {
 
@@ -210,10 +251,10 @@ async function rectify (notifier) {
     if (!predecessorIsDefined
 
     // or if notifier is a closer predecessor than current 
-    || between(toSha1(notifier.addr), toSha1(this.predecessor), this.id)) {
+    || between(toSha1(notifier.address), toSha1(this.predecessor), this.id)) {
 
       // update currant predecessor
-      this.predecessor = notifier.addr;
+      this.predecessor = notifier.address;
     
     }
 
@@ -233,11 +274,11 @@ async function stabilize () {
     // get successor's predecessor and call it p (potential new predecessor)
     let p = await rpc(successor, 'getPredecessor');
 
-    if (isAddress(p.addr) // check p is defined and in between this node and successor
-    && between(toSha1(p.addr), this.id, toSha1(successor))) {
+    if (isAddress(p.address) // check p is defined and in between this node and successor
+    && between(toSha1(p.address), this.id, toSha1(successor))) {
       
       // p is this node's successor
-      successor = p.addr;
+      successor = p.address;
   
     }
 
@@ -263,7 +304,7 @@ async function stabilize () {
       if (l.addrs.length <= i)  {
     
         // * NOTE 
-        this.successorList[i] = this.addr;
+        this.successorList[i] = this.address;
       
       } else {
 
@@ -281,7 +322,7 @@ async function stabilize () {
     }
 
     // notify successor about this (refresh its predecessor)
-    await rpc(successor, 'notify', { addr: this.addr });
+    await rpc(successor, 'notify', { address: this.address });
 
   // CASE: immediate successor has died
   } catch (err) {
@@ -293,7 +334,7 @@ async function stabilize () {
     this.successorList.shift();
 
     // * NOTE 
-    this.successorList.push(this.addr);
+    this.successorList.push(this.address);
 
     // NOTE
     // - the next period will stabilize the new immediate successor and emit changes
@@ -345,7 +386,7 @@ async function findSuccessor (id) {
   // simple optimization
   if (this.id.compare(id) === 0) {
 
-    return { addr: this.addr };
+    return { address: this.address };
 
   } else {
 
@@ -360,7 +401,7 @@ async function findSuccessor (id) {
           await rpc(predecessorAddr, 'ping');
 
           // break from outer loop
-          return { addr: predecessorAddr };
+          return { address: predecessorAddr };
 
         // successor is dead
         } catch (err) {
@@ -402,7 +443,7 @@ async function findSuccessor (id) {
   }
 
   // default
-  //return { addr: this.successorList[0] };
+  //return { address: this.successorList[0] };
 
 }
 
@@ -414,7 +455,7 @@ function onGetPredecessorRequest (call, cb) {
   var getPredecessorResponse = {};
 
   if (this.predecessor != null) {
-    getPredecessorResponse.addr = this.predecessor;
+    getPredecessorResponse.address = this.predecessor;
   }
 
   cb(null, getPredecessorResponse);
@@ -439,7 +480,7 @@ async function onFindSuccessorRequest (call, cb) {
 
     let findSuccessorResponse = await findSuccessor.call(this, call.request.id);
 
-    //console.log(`onFindSuccessor return... ${findSuccessorResponse.addr}`);
+    //console.log(`onFindSuccessor return... ${findSuccessorResponse.address}`);
 
     cb(null, findSuccessorResponse);
 
@@ -647,21 +688,18 @@ class Peer extends EventEmitter {
 
     super();
 
-    if (!(this instanceof Peer)) {
-
-      return new Peer(port, options);
-
-    }
+    // TODO
+    // - use random port when port is 0
 
     if (!isPort(port)) {
       throw new Error('"port" argument must be between 1 and 65536');
     }
 
     // set address
-    this.addr = ip.address() + ':' + port;
+    this.address = ip.address() + ':' + port;
 
     // initialize node identifier
-    this.id = toSha1(this.addr);
+    this.id = toSha1(this.address);
     
     // successor list length and replica set size
     this.k = k;
@@ -675,7 +713,7 @@ class Peer extends EventEmitter {
     this.successorList.fill('');
 
     // immediate successor
-    this.successorList[0] = this.addr;
+    this.successorList[0] = this.address;
 
     // local bucket storage
     this.bucket = {};
@@ -714,7 +752,7 @@ class Peer extends EventEmitter {
     
     });
     
-    this.server.bind(this.addr, grpc.ServerCredentials.createInsecure());
+    this.server.bind(this.address, grpc.ServerCredentials.createInsecure());
 
     this.server.start();
 
@@ -734,13 +772,13 @@ class Peer extends EventEmitter {
   /**
    *
    */
-  async echo (addr, msg) {
+  async echo (address, message) {
 
     var getEchoResponse;
 
     try {
 
-      getEchoResponse = await rpc(addr, 'echo', { msg, addr: this.addr });
+      getEchoResponse = await rpc(address, 'echo', { message, address: this.address });
 
     } catch (err) {
 
@@ -755,13 +793,13 @@ class Peer extends EventEmitter {
   /**
    *
    */
-  async ping (addr) {
+  async ping (address) {
 
     var getPingResponse;
 
     try {
 
-      getPingResponse = await rpc(addr, 'ping');
+      getPingResponse = await rpc(address, 'ping');
 
     } catch (err) {
     
@@ -776,10 +814,10 @@ class Peer extends EventEmitter {
   /**
    *
    */
-  async join (addr) {
+  async join (address) {
 
     // check if already joined
-    if (this.successorList[0] != this.addr) {
+    if (this.successorList[0] != this.address) {
       return;
     }
 
@@ -787,20 +825,20 @@ class Peer extends EventEmitter {
     try {
 
       // get this node's successor and call it s
-      let s = await rpc(addr, 'findSuccessor', { id: this.id });
+      let s = await rpc(address, 'findSuccessor', { id: this.id });
 
-      this.replicateFrom(s.addr);
+      this.replicateFrom(s.address);
 
       // get s's predecessor and call is p
-      let p = await rpc(s.addr, 'getPredecessor');
+      let p = await rpc(s.address, 'getPredecessor');
 
       /* invariant: p is this node's predecessor */
 
       // get p's successor list and call it l
-      let l = await rpc(p.addr, 'getSuccessorList');
+      let l = await rpc(p.address, 'getSuccessorList');
 
       // set p as predecessor
-      this.predecessor = p.addr;
+      this.predecessor = p.address;
 
       // borrow p's list l (at most k)
       for (let i = 0; i < this.k; i++) {
@@ -809,7 +847,7 @@ class Peer extends EventEmitter {
         if (l.addrs.length <= i)  {
         
           // * NOTE 
-          this.successorList[i] = this.addr;
+          this.successorList[i] = this.address;
         
         } else {
 
@@ -836,7 +874,7 @@ class Peer extends EventEmitter {
   async leave () {
 
     // check if not joined
-    if (this.successorList[0] === this.addr) {
+    if (this.successorList[0] === this.address) {
       return;
     }
 
@@ -851,7 +889,7 @@ class Peer extends EventEmitter {
     this.successorList.fill('');
 
     // reset immediate successor
-    this.successorList[0] = this.addr;
+    this.successorList[0] = this.address;
 
     // TODO
     // - first on self: send s = this.successorList[this.k - 1] to predecessor
@@ -877,7 +915,7 @@ class Peer extends EventEmitter {
 
       let s = await findSuccessor.call(this, id);
 
-      getResponse = await rpc(s.addr, 'get', { id });
+      getResponse = await rpc(s.address, 'get', { id });
 
     } catch (err) {
     
@@ -903,7 +941,7 @@ class Peer extends EventEmitter {
 
       let s = await findSuccessor.call(this, id);
 
-      await rpc(s.addr, 'set', { id, value });
+      await rpc(s.address, 'set', { id, value });
 
     } catch (err) {
     
@@ -926,7 +964,7 @@ class Peer extends EventEmitter {
 
       let s = await findSuccessor.call(this, id);
 
-      deleteResponse = await rpc(s.addr, 'delete', { id });
+      deleteResponse = await rpc(s.address, 'delete', { id });
 
     } catch (err) {
     
@@ -941,15 +979,15 @@ class Peer extends EventEmitter {
   /**
    *
    */
-  async replicateFrom(addr) {
+  async replicateFrom (address) {
 
-    if (addr === this.addr) {
+    if (address === this.address) {
       return;
     }
 
     try {
 
-      let getAllResponse = await rpc(addr, 'getAll', { id: this.id });
+      let getAllResponse = await rpc(address, 'getAll', { id: this.id });
 
       for (let entry of getAllResponse.bucketEntries) {
 
@@ -970,9 +1008,9 @@ class Peer extends EventEmitter {
   /**
    *
    */
-  async replicateTo(addr) {
+  async replicateTo (address) {
 
-    if (addr === this.addr) {
+    if (address === this.address) {
       return;
     }
 
@@ -990,7 +1028,7 @@ class Peer extends EventEmitter {
 
       }
 
-      await rpc(addr, 'setAll', { bucketEntries });
+      await rpc(address, 'setAll', { bucketEntries });
 
     } catch (err) {
 
@@ -1008,7 +1046,7 @@ class Peer extends EventEmitter {
     await this.leave();
 
     // TODO
-    // - maybe unbind events
+    // - unbind events
 
     clearInterval(this.timeout);
 
@@ -1020,15 +1058,20 @@ class Peer extends EventEmitter {
   
   }
 
+  static isPeer (peer) {
+    return (peer instanceof Peer);
+  }
+
+  static isJoined (peer) {
+    return this.address != this.successorList[0];
+  }
+
 }
 
 /**
  *
  */
 function createPeer (port, nSuccessors) {
-
-  // TODO
-  // - random port when port is 0
 
   nSuccessors = (nSuccessors > 0) ? nSuccessors : R;
 
@@ -1041,5 +1084,7 @@ module.exports = {
   createPeer,
   Peer,
   isPort,
-  isAddress
+  isAddress,
+  get,
+  set
 }

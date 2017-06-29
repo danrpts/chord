@@ -19,16 +19,16 @@ service chordRPC {
 message empty {}
 
 message echoRequest {
-  string msg = 1;
-  string addr = 2;
+  string message = 1;
+  string address = 2;
 }
 
 message getPredecessorResponse {
-  string addr = 1;
+  string address = 1;
 }
 
 message getSuccessorResponse {
-  string addr = 1;
+  string address = 1;
 }
 
 message getSuccessorListResponse {
@@ -40,11 +40,11 @@ message findSuccessorRequest {
 }
 
 message findSuccessorResponse {
-  string addr = 1;
+  string address = 1;
 }
 
 message notifyRequest {
-  string addr = 1;
+  string address = 1;
 }
 
 message getRequest {

@@ -66,7 +66,6 @@ if (argv.version) {
   printUsage();
 
   printHelp();
-
   process.exit(0);
 
 }
