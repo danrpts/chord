@@ -6,7 +6,7 @@ service chordRPC {
   rpc getSuccessorList (empty) returns (getSuccessorListResponse) {}
   rpc findSuccessor (findSuccessorRequest) returns (findSuccessorResponse) {}
 
-  rpc ping (empty) returns (empty) {}
+  rpc ping (pingRequest) returns (pingResponse) {}
   rpc echo (echoRequest) returns (empty) {}
   rpc notify (notifyRequest) returns (empty) {}
   rpc get (getRequest) returns (getResponse) {}
@@ -17,6 +17,14 @@ service chordRPC {
 }
 
 message empty {}
+
+message pingRequest {
+  string address = 1;
+}
+
+message pingResponse {
+  string address = 1;
+}
 
 message echoRequest {
   string message = 1;
