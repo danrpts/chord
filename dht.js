@@ -1,3 +1,4 @@
+'use strict';
 const _ = require('underscore');
 const ip = require('ip');
 const grpc = require('grpc');
@@ -7,7 +8,7 @@ const EventEmitter = require('events').EventEmitter;
 const Buffer = require('buffer').Buffer;
 const chordRPC = grpc.load(__dirname + '/chord.proto').chordRPC;
 
-// finger list length (should be hash bit size so 160 fro sha1)
+// finger list length (should be hash length in bits e.g. 160 fro sha1)
 const M = 4; 
 
 // 160 because using SHA1 hash function
@@ -19,6 +20,9 @@ const FINGER_BASE = new Array(M).fill(undefined).map((_,i) => bignum.pow(2, i));
 // default successor list length and replica set size
 const R = 1;
 
+// TODO
+// - return own status codes
+// - handle gRPC errors
 const STATUS_CODES = {};
 
 /**
@@ -46,23 +50,27 @@ function isAddress (addr) {
 /**
  *
  */
-function rpc (addr, method, req) {
+function rpc (address, method, request) {
 
-  if (!isAddress(addr)) {
-    throw new Error('"addr" argument must be compact IP-address:port');
+  if (!isAddress(address)) {
+
+    // TODO
+    // - throw or return (research error handling)
+    return new Error('"address" argument must be compact IP-address:port');
+  
   }
 
-  req = req || {};
+  request = request || {};
 
-  var client = new chordRPC(addr, grpc.credentials.createInsecure());
+  var client = new chordRPC(address, grpc.credentials.createInsecure());
 
   return new Promise((resolve, reject) => {
 
-    client[method](req, (err, res) => {
+    client[method](request, (error, response) => {
 
-      if (err) reject(err);
+      if (error) reject(error);
 
-      else resolve(res);
+      else resolve(response);
 
       grpc.closeClient(client);
 
@@ -132,7 +140,7 @@ async function checkPredecessor () {
  */
 async function fixFingers () {
 
-  // generate finger id meaning this.id + 2^k
+  // generate finger id (this.id + 2^k % 2^160)
   var id = bignum.fromBuffer(this.id)
                  .add(FINGER_BASE[this.iFinger])
                  .mod(MAX_ID)
@@ -140,20 +148,28 @@ async function fixFingers () {
   
   try {
 
-    var findSuccessorResponse = await findSuccessor.call(this, id);
+    // find the successor for id
+    var s = await findSuccessor.call(this, id);
 
-    this.finger[this.iFinger] = findSuccessorResponse.addr;
+    // update finger table entry
+    this.finger[this.iFinger] = s.addr;
 
   } catch (err) {
 
     console.error("fixFingers", err);
 
+  // on success or failure
   } finally {
 
+    // increment finger index
     this.iFinger += 1;
 
+    // check maximum M fingers
     if (M <= this.iFinger) {
+    
+      // reset finger table index
       this.iFinger = 0;
+
     }
 
   }
@@ -274,16 +290,13 @@ async function stabilize () {
 
     // TODO if err === Connect Failed or Timeout {
 
-    // remove dead node
-    //this.emit('removedSuccessor');
-
     this.successorList.shift();
 
     // * NOTE 
     this.successorList.push(this.addr);
 
     // NOTE
-    // - the next period will stabilize this new immediate successor
+    // - the next period will stabilize the new immediate successor and emit changes
 
     // } else break finally and throw exception
 
@@ -489,14 +502,16 @@ function onGetRequest (call, cb) {
   
   var idStr = id.toString('hex');
 
-  if (this.bucket.hasOwnProperty(idStr)) {
+  if (_.has(this.bucket, idStr)) {
 
-    cb(null, { value: this.bucket[idStr] }); // return as buffer
-
-    // TODO
-    // - return status code
+     // return value as buffer
+    cb(null, { value: this.bucket[idStr] });
 
   } else {
+
+    // TODO
+    // - handle error
+    // - return status code
 
     cb(new Error('invalid key'));
 
@@ -513,9 +528,12 @@ function onSetRequest (call, cb) {
   
   var idStr = id.toString('hex');
   
-  var value = call.request.value; // store a buffer
+  // type of value is Buffer
+  var value = call.request.value;
 
   this.bucket[idStr] = value;
+
+  this.emit('set', {id, value});
 
   // TODO
   // - handle error
@@ -558,11 +576,15 @@ function onGetAllRequest (call, cb) {
 
   var bucketEntries = [];
 
+  var pId = toSha1(this.predecessor);
+
+  var nId = call.request.id;
+
   for (let idStr in this.bucket) {
 
-    let id = Buffer.from(idStr, 'hex');
+    let kId = Buffer.from(idStr, 'hex');
 
-    if (between(id, toSha1(this.predecessor), call.request.id, false, true)) {
+    if (between(kId, pId, nId, false, true)) {
 
       let value = Buffer.from(this.bucket[idStr], 'utf8');
 
@@ -576,7 +598,6 @@ function onGetAllRequest (call, cb) {
 
   // TODO
   // - return status code
-
   cb(null, bucketEntries);
 
 }
@@ -586,20 +607,30 @@ function onGetAllRequest (call, cb) {
  */
 function onSetAllRequest (call, cb) {
 
-  for (let entry of call.request.bucketEntries) {
+  var bucketEntries = call.request.bucketEntries;
 
-    var idStr = entry.id.toString('hex');
-  
-    var value = entry.value;
+  var pId = toSha1(this.predecessor);
 
-    this.bucket[idStr] = value.toString('utf8');
+  var nId = this.id;
+
+  for (let entry of bucketEntries) {
+
+    let kId = entry.id;
+
+    if (between(kId, pId, nId, false, true)) {
+    
+      let value = entry.value;
+
+      let kIdStr = kId.toString('hex');
+
+      this.bucket[kIdStr] = value.toString('utf8');
+
+    }
 
   }
   
   // TODO
-  // - handle error
   // - return status code
-
   cb(null);
 
 }
@@ -848,8 +879,6 @@ class Peer extends EventEmitter {
 
       getResponse = await rpc(s.addr, 'get', { id });
 
-      getResponse.value = getResponse.value.toString('utf8');
-
     } catch (err) {
     
       console.log('get', err);
@@ -867,25 +896,20 @@ class Peer extends EventEmitter {
 
     var id = toSha1(key);
 
-    var value = Buffer.from(value, 'utf8');
-
-    var setResponse;
+    // TODO
+    // - check value is buffer
 
     try {
 
       let s = await findSuccessor.call(this, id);
 
-      setResponse = await rpc(s.addr, 'set', { id, value });
-
-      this.emit('set', key, value);
+      await rpc(s.addr, 'set', { id, value });
 
     } catch (err) {
     
       console.error('set', err);
 
     }
-
-    return setResponse;
 
   }
 
@@ -914,6 +938,9 @@ class Peer extends EventEmitter {
 
   }
 
+  /**
+   *
+   */
   async replicateFrom(addr) {
 
     if (addr === this.addr) {
@@ -925,7 +952,11 @@ class Peer extends EventEmitter {
       let getAllResponse = await rpc(addr, 'getAll', { id: this.id });
 
       for (let entry of getAllResponse.bucketEntries) {
-        this.bucket[entry.id.toString('hex')] = entry.value.toString('utf8');
+
+        let idStr = entry.id.toString('hex');
+
+        this.bucket[idStr] = entry.value;
+
       }
 
     } catch (err) {
@@ -936,6 +967,9 @@ class Peer extends EventEmitter {
 
   }
 
+  /**
+   *
+   */
   async replicateTo(addr) {
 
     if (addr === this.addr) {
@@ -947,9 +981,13 @@ class Peer extends EventEmitter {
       let bucketEntries = [];
 
       for (let idStr in this.bucket) {
+        
         let id = Buffer.from(idStr, 'hex');
-        let value = Buffer.from(this.bucket[idStr], 'utf8');
+        
+        let value = this.bucket[idStr];
+        
         bucketEntries.push({ id, value });
+
       }
 
       await rpc(addr, 'setAll', { bucketEntries });

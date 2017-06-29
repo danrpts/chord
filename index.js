@@ -1,3 +1,4 @@
+'use strict';
 const _ = require('underscore');
 const minimist = require('minimist');
 const readline = require('readline');
@@ -41,16 +42,16 @@ function printInfo (peer) {
 function printHelp () {
 
   console.error('Commands:');
-  console.error('join <address>                    Add peer to network.');
-  console.error('leave                             Remove peer from network.');
-  console.error('get <key> [-e <encoding>]         Read with encoding. (Default utf8)');
-  console.error('set <key> <value> [-e <encoding>] Create/update with encoding. (Default utf8)');
-  console.error('delete <key>                      Delete key and value.');
-  console.error('ping <address>                    Ping remote peer.');
-  console.error('echo <address> [message]          Print to remote peer.');
-  console.error('info                              Print info about peer.');
-  console.error('help                              Show this screen.');
-  console.error('quit                              Shutdown peer and exit.\n');
+  console.error(' join <address>            Add peer to network.');
+  console.error(' leave                     Remove peer from network.');
+  console.error(' get <key>                 Read key from network.');
+  console.error(' set <key> [value]         Create/update key in network.');
+  console.error(' delete <key>              Delete key and value.');
+  console.error(' ping <address>            Ping remote peer.');
+  console.error(' echo <address> [message]  Print to remote peer.');
+  console.error(' info                      Print info about peer.');
+  console.error(' help                      Show this screen.');
+  console.error(' quit                      Shutdown peer and exit.\n');
 
 }
 
@@ -73,8 +74,7 @@ if (argv.version) {
 if (argv._.length > 0 // check for invalid arguments
 ||  _.has(argv, 'p') && !dht.isPort(argv.p) // invalid port number
 ||  _.has(argv, 'k') && !_.isNumber(argv.k) // invalid successor/replica count
-||  _.has(argv, 'join') && !dht.isAddress(argv.join) // invalid address
-) {
+||  _.has(argv, 'join') && !dht.isAddress(argv.join)) { // invalid address
 
   // TODO
   // - check invalid options
@@ -149,14 +149,28 @@ if (argv._.length > 0 // check for invalid arguments
 
     let [command, ...args] = line.trim().split(' ');
 
+    args = minimist(args);
+
+    args._ = _.compact(args._);
+
     // TODO
     // handle empty line
 
     switch (command) {
 
-      case 'echo': 
+      case 'echo':
 
-        peer.echo(args[0], args.slice(1).join(' '));
+        var address = args._[0];
+
+        if (!dht.isAddress(address)) {
+          printHelp();
+          rl.prompt();
+          break;
+        }
+
+        var message = args._.slice(1).join(' ');
+
+        peer.echo(address, message);
 
         rl.prompt();
 
@@ -164,17 +178,23 @@ if (argv._.length > 0 // check for invalid arguments
 
       case 'ping':
 
-        var addr = args[0];
+        var address = args._[0];
+
+        if (!dht.isAddress(address)) {
+          printHelp();
+          rl.prompt();
+          break;
+        }
 
         (async () => {
 
           var t = process.hrtime();
 
-          var pingResponse = await peer.ping(addr);
+          var pingResponse = await peer.ping(address);
 
           t = process.hrtime(t);
 
-          console.log(`<Ping ${addr}> ${(t[1] / 1e6).toPrecision(3)} ms`);          
+          console.log(`<Ping ${address}> ${(t[1] / 1e6).toPrecision(3)} ms`);          
 
           rl.prompt();
 
@@ -185,12 +205,18 @@ if (argv._.length > 0 // check for invalid arguments
       case 'join':
 
         // TODO
-        // - check !isJoined() 
+        // - check !isJoined()
         // - maybe use m,r,k params as network id hash
-
-        args = minimist(args);
         
-        peer.join(args._[0]);
+        var address = args._[0];
+
+        if (!dht.isAddress(address)) {
+          printHelp();
+          rl.prompt();
+          break;
+        }
+
+        peer.join(address);
 
         rl.prompt();
         
@@ -208,12 +234,22 @@ if (argv._.length > 0 // check for invalid arguments
         break;
 
       case 'get':
-                
-        (async () => {
-          
-          var getResponse = await peer.get(args[0]);
 
-          console.log(`<Bucket ${args[0]}> ${getResponse.value}`);
+        var key = args._[0];
+
+        if (!_.isString(key)) {
+          printHelp();
+          rl.prompt();
+          break;
+        }
+
+        (async () => {
+
+          var getResponse = await peer.get(key);
+
+          var value = getResponse.value.toString('utf8');
+
+          console.log(`<Bucket ${key}> ${value}`);
           
           rl.prompt();
 
@@ -222,28 +258,36 @@ if (argv._.length > 0 // check for invalid arguments
         break;
 
       case 'set':
-          
-        (async () => {
 
-          var setResponse = await peer.set(args[0], args.slice(1).join(' '));
-        
-          //console.log(`SET ${args[0]} -> ${val}`); 
+        var key = args._[0];
 
+        if (!_.isString(key)) {
+          printHelp();
           rl.prompt();
+          break;
+        }
 
-        })();
+        var value = Buffer.from(args._.slice(1).join(' '));
+
+        peer.set(key, value);
+      
+        rl.prompt();
         
         break;
 
       case 'delete':
 
-        (async () => {
-          
-          var deleteResponse = await peer.delete(args[0]);
-          
-          rl.prompt();
+        var key = args._[0];
 
-        })();
+        if (!_.isString(key)) {
+          printHelp();
+          rl.prompt();
+          break;
+        }
+          
+        peer.delete(key);
+          
+        rl.prompt();
 
         break;
 
@@ -260,14 +304,6 @@ if (argv._.length > 0 // check for invalid arguments
         peer.close();
 
         process.exit(0);
-
-        break;
-       
-      case 'clear':
-
-        process.stdout.write('\033c');
-        
-        rl.prompt();
 
         break;
 
