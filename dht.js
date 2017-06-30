@@ -1,24 +1,23 @@
 'use strict';
-
-const _Peer = require('./Peer.js');
-const Peer = _Peer.Peer;
-const rpc = _Peer.rpc;
+const _ = require('underscore');
+const peer = require('./dht_peer.js');
+const Peer = peer.Peer;
+const rpc = peer.rpc;
 
 /**
- * HIGH-LEVEL CHORD CONSTANTS
+ * DEFINE HIGH-LEVEL CHORD PEER CONSTANTS
  *
  */
-//const A = 'sha1'; // default identifier space hashing function
 const M = 4; // default finger-list length (should be 160 for sha1)
 const R = 1; // default successor-list-length and replica-set-size
 
 /**
- * HIGH-LEVEL CHORD API
+ * DEFINE HIGH-LEVEL CHORD CLIENT API
  *
  */
 
 /**
- *
+ * Create a new node
  */
 function createPeer (port, nFingers, nSuccessors) {
 
@@ -33,88 +32,200 @@ function createPeer (port, nFingers, nSuccessors) {
 }
 
 /**
- *
+ * Ping a receiving node from this node
  */
-async function ping (node, address) {
+async function ping (self, receiver) {
 
-  if (!Peer.isJoined(node)) {
-    throw new Error('"node" argument is not joined to network');
+  if (!Peer.isJoined(self)) {
+    throw new Error('"self" argument must be joined');
   }
 
-  if (!Peer.isAddress(address)) {
-    throw new Error('"address" argument must be compact IP-address:port');
+  if (!Peer.isAddress(receiver)) {
+    throw new Error('"receiver" argument must be compact IP-address:port');
   }
 
-  return rpc(address, 'ping', { address: node.address });
+  var request = { sender: self.address };
+
+  return rpc(receiver, 'ping', request);
 
 }
 
 /**
- *
+ * Echo a message from this node onto a receiving node
  */
-async function echo (node, address, message) {
+async function echo (self, receiver, message) {
 
-  if (!Peer.isJoined(node)) {
-    throw new Error('"node" argument is not joined to network');
+  if (!Peer.isJoined(self)) {
+    throw new Error('"self" argument must be joined');
   }
 
-  if (!Peer.isAddress(address)) {
-    return new Error('"address" argument must be compact IP-address:port');
+  if (!Peer.isAddress(receiver)) {
+    return new Error('"receiver" argument must be compact IP-address:port');
   }
 
-  return rpc(address, 'echo', { message, address: node.address });
+  var request = { message, sender: self.address };
+
+  return rpc(receiver, 'echo', request);
 
 }
 
 /**
- *
+ * 
+ * NOTE: Only replicates entries that belong to this node
  */
-async function join (node, address) {
+async function partition (self, receiver) {
 
-  if (Peer.isJoined(node)) {
+  // invalid state
+  if (!Peer.isJoined(self)) {
+    throw new Error('"self" argument must be joined');
+  }
+
+  var predecessorAddress = self.predecessor;
+
+  // invalid predecessor state
+  if (!Peer.isAddress(predecessorAddress)) {
+    return cb(new Error());
+  }
+
+  // invalid request
+  if (!Peer.isAddress(receiver)) {
+    throw new Error('"receiver" argument must be compact IP-address:port');
+  }
+
+  // invalid request
+  if (receiver === self.address) {
+    throw new Error('cannot replicate from self');
+  }
+
+  var partitionRequest = { lower: Peer.toSha1(predecessorAddress), upper: self.id };
+
+  try {
+
+    // request owned bucket entries
+    let partitionResponse = await rpc(receiver, 'partition', partitionRequest);
+
+    // copy entries into bucket
+    for (let entry of partitionResponse.entries) {
+
+      let key = entry.id.toString('hex');
+
+      self.bucket[key] = entry.value;
+
+    }
+
+    return partitionResponse;
+
+  } catch (e) {
+
+    throw e;
+
+  }
+
+}
+
+/**
+ * 
+ * NOTE: Only replicates entries that belong to receiving node
+ */
+async function merge (self, receiver) {
+
+  // invalid state
+  if (!Peer.isJoined(self)) {
+    throw new Error('"self" argument must be joined');
+  }
+
+  // invalid request
+  if (!Peer.isAddress(receiver)) {
+    throw new Error('"receiver" argument must be compact IP-address:port');
+  }
+
+  // invalid request
+  if (receiver === self.address) {
+    throw new Error('cannot replicate to self');
+  }
+
+  var mergeRequest = { entries: [] };
+
+  for (let key in self.bucket) {
+    
+    let keyId = Buffer.from(key, 'hex');
+    
+    let value = self.bucket[key];
+    
+    mergeRequest.entries.push({ id: keyId, value });
+
+  }
+
+  try {
+
+    return await rpc(receiver, 'merge', mergeRequest);
+
+  } catch (e) {
+
+    throw e;
+
+  }
+
+}
+
+/**
+ * Join this node to a DHT network via a receiving node
+ */
+async function join (self, receiver) {
+
+  // invalid state
+  if (Peer.isJoined(self)) {
     throw new Error('"node" argument must not be joined');
   }
 
-  if (!Peer.isAddress(address)) {
+  // invalid state, wait 2 seconds for notify
+  if (!Peer.isAddress(this.predecessor)) {
+    //setTimeout(() => {}, 2000);
+  }
+
+  // invalid request
+  if (!Peer.isAddress(receiver)) {
     return new Error('"address" argument must be compact IP-address:port');
   }
+
+  // invalid request
+  if (receiver === self.address) {
+    throw new Error('cannot join to self');
+  }  
+
+  var findSuccessorRequest = { id: self.id };
 
   // bootstrap steps setup successor list (do not wait for stabilize to do these steps)
   try {
 
     // get this node's successor and call it s
-    let s = await rpc(address, 'findSuccessor', { id: node.id });
-
-    // s is live successor
-    //node.replicateFrom(s.address);
+    let findSuccessorResponse = await rpc(receiver, 'findSuccessor', findSuccessorRequest);
 
     // get s's predecessor and call is p
-    let p = await rpc(s.address, 'getPredecessor');
+    let getPredecessorResponse = await rpc(findSuccessorResponse.address, 'getPredecessor');
 
     /* invariant: p is this node's predecessor */
+    self.predecessor = getPredecessorResponse.address;
 
     // get p's successor list and call it l
-    let l = await rpc(p.address, 'getSuccessorList');
+    let getSuccessorListResponse = await rpc(self.predecessor, 'getSuccessorList');
 
-    // set p as predecessor
-    node.predecessor = p.address;
+    // TODO
+    // - handle unequal k values (received list is different size than this list)
+    self.successorList = getSuccessorListResponse.addresses.slice(0, self.k);
 
-    // borrow p's list l (at most k)
-    for (let i = 0; i < node.k; i++) {
-      
-      // l has fewer elements (at least 1)
-      if (l.addrs.length <= i)  {
-      
-        // * NOTE 
-        node.successorList[i] = node.address;
-      
-      } else {
+    // perform a notify so replicate can occur with ease
+    let notifierRequest = { sender: self.address };
 
-        node.successorList[i] = l.addrs[i];
+    // notify new successor about this node (refresh its predecessor)
+    await rpc(self.successorList[0], 'notify', notifierRequest);
 
-      }
+    // receive partition from successor
+    await partition(self, self.successorList[0]);
 
-    }
+    // NOTE
+    // - it should partition from successor
+    // - it should partition from predecessor
 
     // NOTE
     // - do not emit successor change because we replicated from it
@@ -128,12 +239,12 @@ async function join (node, address) {
 }
 
 /**
- *
+ * Leave the DHT network this node belongs to
  */
-async function leave (node) {
+async function leave (self) {
 
-  if (!Peer.isJoined(node)) {
-    throw new Error('"node" argument must be joined');
+  if (!Peer.isJoined(self)) {
+    throw new Error('"self" argument must be joined');
   }
 
   try {
@@ -171,12 +282,12 @@ async function leave (node) {
 }
 
 /**
- *
+ * Get a value from the DHT network via this node and key
  */
-async function get (node, key) {
+async function get (self, key) {
 
-  if (!Peer.isJoined(node)) {
-    throw new Error('"node" argument must be joined');
+  if (!Peer.isJoined(self)) {
+    throw new Error('"self" argument must be joined');
   }
 
   if (!_.isString(key)) {
@@ -185,11 +296,13 @@ async function get (node, key) {
 
   var id = Peer.toSha1(key);
 
+  var findSuccessorRequest = { id };
+
   try {
 
-    let s = await findSuccessor.call(node, id);
+    let findSuccessorResponse = await rpc(self.address, 'findSuccessor',  findSuccessorRequest);
 
-    return rpc(s.address, 'get', { id });
+    return rpc(findSuccessorResponse.address, 'get', { id });
 
   } catch (e) {
   
@@ -200,12 +313,12 @@ async function get (node, key) {
 }
 
 /**
- *
+ * Set a value to the DHT network via this node and key
  */
-async function set (node, key, value) {
+async function set (self, key, value) {
 
-  if (!Peer.isJoined(node)) {
-    throw new Error('"node" argument must be joined');
+  if (!Peer.isJoined(self)) {
+    throw new Error('"self" argument must be joined');
   }
 
   if (!_.isString(key)) {
@@ -218,11 +331,13 @@ async function set (node, key, value) {
 
   var id = Peer.toSha1(key);
 
+  var findSuccessorRequest = { id };
+
   try {
 
-    let s = await findSuccessor.call(node, id);
+    let findSuccessorResponse = await rpc(self.address, 'findSuccessor',  findSuccessorRequest);
 
-    return rpc(s.address, 'set', { id, value });
+    return rpc(findSuccessorResponse.address, 'set', { id, value });
 
   } catch (e) {
   
@@ -233,40 +348,48 @@ async function set (node, key, value) {
 }
 
 /**
- *
+ * Delete a value in the DHT network via this node and key
  */
-async function del (node, key) {
+async function del (self, key) {
+
+  if (!Peer.isPeer(self) && !Peer.isJoined(self)) {
+    throw new Error('"self" argument must be instance of Peer and joined');
+  }
+
+  if (!_.isString(key)) {
+    throw new Error('"key" argument must be string');
+
+  }
+
+  var id = Peer.toSha1(key);
+
+  var findSuccessorRequest = { id };
 
   try {
 
-    if (!Peer.isPeer(node) && !Peer.isJoined(node)) {
-      throw new Error('"node" argument must be instance of Peer and joined');
-    }
+    let findSuccessorResponse = await rpc(self.address, 'findSuccessor',  findSuccessorRequest);
 
-    if (!_.isString(key)) {
-      throw new Error('"key" argument must be string');
+    return rpc(findSuccessorResponse.address, 'delete', { id });
 
-    }
-
-    let id = Peer.toSha1(key);
-
-    let s = await findSuccessor.call(node, id);
-
-    return rpc(s.address, 'delete', { id });
-
-  } catch (error) {
+  } catch (e) {
   
-    console.error("delete", error);
+    throw e
 
   }
 
 }
 
+/**
+ * EXPOSE HIGH-LEVEL CHORD CLIENT API
+ *
+ */
 module.exports = {
   Peer,
   createPeer,
   ping,
   echo,
+  partition,
+  merge,
   join,
   leave,
   get,

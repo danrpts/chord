@@ -97,21 +97,25 @@ if (argv._.length > 0 // check for invalid arguments
 
   const peer = dht.createPeer(argv.p, argv.m, argv.r);
 
-  peer.on('echo', echo => {
+  peer.on('echo', echoResponse => {
 
-    console.log(`\n<Echo ${echoo.address}> ${getEcho.message}`);
+    console.log(`\n<Echo ${echoResponse.sender}> ${echoResponse.message}`);
 
     rl.prompt();
 
   });
 
   // replicate this set to successor
-  peer.on('successor', successor => {
+  peer.on('successor::up', successor => {
 
     // replicate to new successor
 
     //peer.replicateTo(successor);
 
+
+  });
+
+  peer.on('successor::down', successor => {
 
   });
 
