@@ -3,15 +3,16 @@
 const _ = require('underscore');
 const minimist = require('minimist');
 const readline = require('readline');
-
-const dht = require('./dht.js');
+const dht = require('./api.js');
+const util = require('./util.js');
+const isPort = util.isPort;
+const isAddress = util.isAddress;
 
 // TODO
-// -
+// - get from process/environment
 const arg0 = 'chord';
 const argv = minimist(process.argv.slice(2));
 argv._ = _.compact(argv._);
-
 
 function printUsage () {
 
@@ -27,9 +28,9 @@ function printInfo (peer) {
   info += `<Predecessor> ${(peer.predecessor) ? peer.predecessor : ''}\n`;
   info += `<Self> ${peer.address}\n`;
   
-  var successorList = peer.successorList;
-  for (let i in peer.successorList) {
-    info += `<Successor ${i}> ${successorList[i]}\n`;
+  var successor = peer.successor;
+  for (let i in successor) {
+    info += `<Successor ${i}> ${successor[i]}\n`;
   }
 
   for (let idStr in peer.bucket) {
@@ -77,10 +78,10 @@ if (argv.version) {
 }
 
 if (argv._.length > 0 // check for invalid arguments
-||  _.has(argv, 'p') && !dht.Peer.isPort(argv.p) // invalid port number
+||  _.has(argv, 'p') && !isPort(argv.p) // invalid port number
 ||  _.has(argv, 'm') && !_.isNumber(argv.m) // invalid finger count
 ||  _.has(argv, 'r') && !_.isNumber(argv.r) // invalid successor/replica count
-||  _.has(argv, 'join') && !dht.Peer.isAddress(argv.join)) { // invalid address
+||  _.has(argv, 'join') && !isAddress(argv.join)) { // invalid address
 
   // TODO
   // - check invalid options
@@ -99,7 +100,7 @@ if (argv._.length > 0 // check for invalid arguments
 
   peer.on('echo', echoResponse => {
 
-    console.log(`\n<Echo ${echoResponse.sender}> ${echoResponse.message}`);
+    console.log(`\n<Echo ${echoResponse.sender.ipv4}> ${echoResponse.message}`);
 
     rl.prompt();
 
@@ -112,10 +113,17 @@ if (argv._.length > 0 // check for invalid arguments
 
     //peer.replicateTo(successor);
 
+    console.log(`\nUP ${successor}`);
+
+    rl.prompt();
 
   });
 
   peer.on('successor::down', successor => {
+
+    console.log(`\nDOWN ${successor}`);
+
+    rl.prompt();
 
   });
 
@@ -172,7 +180,7 @@ if (argv._.length > 0 // check for invalid arguments
 
         var t = process.hrtime();
 
-        if (!dht.Peer.isAddress(address)) {
+        if (!isAddress(address)) {
           printHelp();
           rl.prompt();
           break;
@@ -206,7 +214,7 @@ if (argv._.length > 0 // check for invalid arguments
 
         var message = args._.slice(1).join(' ');
 
-        if (!dht.Peer.isAddress(address)) {
+        if (!isAddress(address)) {
           printHelp();
           rl.prompt();
           break;
@@ -236,7 +244,7 @@ if (argv._.length > 0 // check for invalid arguments
         
         var address = args._[0];
 
-        if (!dht.Peer.isAddress(address)) {
+        if (!isAddress(address)) {
           printHelp();
           rl.prompt();
           break;
