@@ -1,9 +1,15 @@
 {
-  "name": "dht",
+  "name": "chord",
   "version": "0.0.1",
   "description": "JavaScript Chord API for Distributed Hash Tables",
+  "repository": { 
+    "type" : "git",
+    "url" : "https://github.com/danrpts/chord.git"
+  },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "cli": "DEBUG=cli node ./examples/cli.js",
+    "chat": "DEBUG=chat node ./examples/chat.js"
   },
   "author": "Daniel Peterson <danrpts@gmail.com>",
   "license": "UNLICENSED",
@@ -12,5 +18,8 @@
     "grpc": "^1.3.8",
     "ip": "^1.1.5",
     "underscore": "^1.8.3"
+  },
+  "devDependencies": {
+    "minimist": "^1.2.0"
   }
 }
