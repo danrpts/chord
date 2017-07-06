@@ -1,34 +1,30 @@
 syntax = "proto3";
 
-service chordRPC {
-  rpc ping (pingRequest) returns (pingResponse) {}
-  rpc echo (echoRequest) returns (empty) {}
+service CHORD_PROTO {
+  rpc ping   (pingRequest)   returns (pingResponse)   {}
+  rpc state  (stateRequest)  returns (stateResponse)  {}
   rpc lookup (lookupRequest) returns (lookupResponse) {}
-  rpc info (empty) returns (infoResponse) {}
-  rpc split (splitRequest) returns (splitResponse) {}
-  rpc notify (notifyRequest) returns (empty) {}  
-  rpc get (getRequest) returns (getResponse) {}
-  rpc set (setRequest) returns (empty) {}
-  rpc delete (deleteRequest) returns (empty) {}
-}
-
-message empty {}
-
-message address {
-  string ipv4 = 1;
+  rpc notify (notifyRequest) returns (notifyResponse) {}
 }
 
 message pingRequest {
-  address sender = 1;
+  string sender = 1;
 }
 
 message pingResponse {
-  address sender = 1;
+  string sender = 1;
 }
 
-message echoRequest {
-  string message = 1;
-  address sender = 2;
+message stateRequest {
+  bool predecessor = 1;
+  bool successor = 2;
+  bool finger = 3;
+}
+
+message stateResponse {
+  string predecessor = 1;
+  repeated string successor = 2;
+  repeated string finger = 3;
 }
 
 message lookupRequest {
@@ -36,44 +32,15 @@ message lookupRequest {
 }
 
 message lookupResponse {
-  address successor = 1;
-}
-
-message infoResponse {
-  address predecessor = 1;
-  repeated address successor = 2;
-}
-  
-message splitRequest {
-  bytes id = 1;
-}
-
-message entry {
-  bytes id = 1;
-  bytes value = 2;
-}
-
-message splitResponse {
-  repeated entry partition = 1;
+  string successor = 1;
 }
 
 message notifyRequest {
-  address sender = 1;
+  string sender = 1;
 }
 
-message getRequest {
-  bytes id = 1;
+message notifyResponse {
+
 }
 
-message getResponse {
-  bytes value = 1;
-}
 
-message setRequest {
-  bytes id = 1;
-  bytes value = 2;
-}
-
-message deleteRequest {
-  bytes id = 1;
-}

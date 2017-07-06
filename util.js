@@ -4,7 +4,13 @@ const _ = require('underscore');
 const ip = require('ip');
 const crypto = require('crypto');
 const grpc = require('grpc');
-const chordRPC = grpc.load(__dirname + '/chord.proto').chordRPC;
+
+/**
+ *
+ */
+const CHORD_PROTO_PATH = '/chord.proto';
+const CHORD_PROTO_GRPC = grpc.load(__dirname + CHORD_PROTO_PATH).CHORD_PROTO;
+
 
 /**
  *
@@ -33,23 +39,21 @@ function isAddress (address) {
 /**
  *
  */
-function isBetween (el, lwr, upr, lwrIcl = false, uprIcl = false) {
+function isBetween (lower, element, upper) {
+
+  // think about own case when lower === upper
 
   // lower before upper
-  if (lwr.compare(upr) < 0) {
+  if (lower.compare(upper) < 0) {
 
-    // lower before el AND el before/at upper
-    return (lwr.compare(el) < 0 && el.compare(upr) < 0) 
-        || (lwrIcl && lwr.compare(el) === 0) 
-        || (uprIcl && el.compare(upr) === 0);
+    // lower before element AND element before upper
+    return (lower.compare(element) < 0 && element.compare(upper) < 0);
 
-  // upper before lower
+  // upper before lower or equal
   } else {
 
-    // lower before el OR el before/at upper
-    return (lwr.compare(el) < 0) || (el.compare(upr) < 0) 
-        || (lwrIcl && lwr.compare(el) === 0) 
-        || (uprIcl && el.compare(upr) === 0);
+    // lower before element OR el before upper
+    return (lower.compare(element) < 0) || (element.compare(upper) < 0);
 
   }
 
@@ -80,7 +84,7 @@ function doRpc (receiver, method, request) {
 
   request = request || {};
 
-  var client = new chordRPC(receiver, grpc.credentials.createInsecure());
+  var client = new CHORD_PROTO_GRPC(receiver, grpc.credentials.createInsecure());
 
   return new Promise((resolve, reject) => {
 

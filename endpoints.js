@@ -14,7 +14,7 @@ const doRpc = util.doRpc;
  */
 function ping (call, cb) {
 
-  var sender = call.request.sender.ipv4;
+  var sender = call.request.sender;
 
   // bad request
   if (!isAddress(sender)) {
@@ -30,97 +30,94 @@ function ping (call, cb) {
 /**
  *
  */
-function echo (call, cb) {
+function state (call, cb) {
 
-  var sender = call.request.sender.ipv4;
+  var response = {};
 
-  // bad request
-  if (!isAddress(sender)) {
-    return cb(new Error());
+  if (call.request.predecessor) {
+    response.predecessor = isAddress(this.predecessor) ? this.predecessor : '';
   }
 
-  // TODOs
-  // - reject echo from nodes in other networks
+  if (call.request.successor) {
+    response.successor = _.map(this.successor, successori => {
+      return isAddress(successori) ? successori : ''
+    });
+  }
 
-  this.emit('echo', call.request);
+  if (call.request.finger) {
+    response.finger = _.map(this.finger, fingeri => {
+      return isAddress(fingeri) ? fingeri : '';
+    });
+  }
 
-  cb(null);
+  this.emit('state', call.request, response);
+
+  cb(null, response);
 
 }
+
 /**
- *
+ * see Stoica et al. 2001 findSuccessor
  */
 async function lookup (call, cb) {
 
-  var id = call.request.id;
+  var keyId = call.request.id;
 
   // invalid request
-  if (!Buffer.isBuffer(id)) {
+  if (!Buffer.isBuffer(keyId)) {
     return cb(new Error());
   }
 
-  // optimization
-  if (this.id.compare(id) === 0) {
+  // optimization (lookup called on self)
+  if (this.id.compare(keyId) === 0) {
 
-    let lookupResponse = {
-      successor: {
-        ipv4: this.address
-      }
+    let response = {
+      successor: isAddress(this.address) ? this.address : ''
     };
 
-    return cb(null, lookupResponse);
+    this.emit('lookup', call.request, response);
 
+    return cb(null, response);
+  
   }
-
-  var pingRequest = {
-    sender: {
-      ipv4: this.address
-    }
-  };
-
-  var lookupRequest = { id };
 
   // TODO
   // - test the catch and continue mechanism by simulating successor failure
-  for (let closest of this.closestPrecedingFinger(id)) {
+  for (let predecessori of this.closestPrecedingNode(keyId)) {
 
     try {
 
-      // found successor
-      if (isBetween(id, this.id, toSha1(closest), false, true)) {
+      // check alive
+      await doRpc(predecessori, 'ping', {
+        sender: isAddress(this.address) ? this.address : ''
+      });
 
-        // check alive
-        await doRpc(closest, 'ping', pingRequest);
+      let predecessoriId = toSha1(predecessori);
 
-        // break from outer loop
+      // base case -- successor found
+      if (predecessoriId.compare(keyId) === 0
+        || isBetween(this.id, keyId, predecessoriId)) {
 
-        let lookupResponse = {
-          successor: {
-            ipv4: closest
-          }
+        let response = {
+          successor: isAddress(predecessori) ? predecessori : ''
         };
-                  
-        return cb(null, lookupResponse);
 
-      // forward to first live successor
+        // emit lookup was successful on this peer
+        this.emit('lookup', call.request, response);
+        
+        // bubble response
+        return cb(null, response);
+
+      // recursive case -- forward lookup to closest peer
       } else {
 
         //console.log(`lookup calling... ${closestPrecedingNodeAddress}`);
 
-        // check alive and forward
-        let lookupResponse = await doRpc(closest, 'lookup', lookupRequest);
+        // check alive and call lookup
+        let response = await doRpc(predecessori, 'lookup', { id: keyId });
 
-        let successor0 = lookupResponse.successor.ipv4;
-
-        // invalid response
-        if (!isAddress(successor0)) {
-          // TODOs
-          // - handle this case (kill that successor?)
-          //return new Error();
-        }
-
-        // break from outer loop
-        return cb(null, lookupResponse);
+        // bubble response
+        return cb(null, response);
 
       }
 
@@ -128,12 +125,14 @@ async function lookup (call, cb) {
     } catch (e) {
 
       // NOTE
-      // - stabilize will clean dead successor up
+      // - fixFingers will refresh stale entries
+      // - stabilize will rectify dead successors
 
-      console.error('lookup rerouting', e);
+      //console.error(`${predecessori} dead -- lookup rerouting`, e);
 
       // if error === Connect Failed or Timeout
-      // try next successor
+      
+      // try next
       continue;
 
       // else throw exception
@@ -145,81 +144,23 @@ async function lookup (call, cb) {
 }
 
 /**
- *
- */
-async function info (call, cb) {
-
-  var infoResponse = {
-    predecessor: {
-      ipv4: this.predecessor || '',
-    },
-    successor: _.map(this.successor, address => {
-      return {
-        ipv4: address
-      }
-    })
-  };
-
-  cb(null, infoResponse);
-
-}
-
-/**
- * Get and delete all entries belonging to requesting node
- */
-function split (call, cb) {
-
-  var id = call.request.id;
-
-  // invalid request
-  if (!Buffer.isBuffer(id)) {
-    return cb(new Error());
-  }
-
-  var partition = [];
-
-  var selfId = this.id;
-
-  for (let key in this.bucket) {
-
-    let keyId = Buffer.from(key, 'hex');
-
-    if (isBetween(id, keyId, selfId, true, false)) {
-
-      let value = Buffer.from(this.bucket[key]);
-
-      partition.push({ id: keyId, value });
-
-      delete this.bucket[key];
-
-    }
-
-  }
-
-  this.emit('split');
-
-  cb(null, { partition });
-
-}
-
-/**
- * see Zave 2010 Rectify step
+ * see Zave 2010 rectify
  */
 async function notify (call, cb) {
 
   // notifier's address
-  let sender = call.request.sender.ipv4;
+  let sender = call.request.sender;
 
-  // bad request
+  // invalid request
   if (!isAddress(sender)) {
     return cb(new Error());
   }
 
   // if no predecessor set or is closer predecessor than the current predecessor
   if (!isAddress(this.predecessor)
-  || isBetween(toSha1(sender), toSha1(this.predecessor), this.id)) {
+    || isBetween(toSha1(this.predecessor), toSha1(sender), this.id)) {
 
-    // update currant predecessor
+    // update current predecessor
     this.predecessor = sender;
 
   } else {
@@ -228,13 +169,9 @@ async function notify (call, cb) {
 
     try {
 
-      let pingRequest = {
-        sender: {
-          ipv4: this.address
-        }
-      };
-
-      await doRpc(this.predecessor, 'ping', pingRequest);
+      await doRpc(this.predecessor, 'ping', {
+        sender: isAddress(this.address) ? this.address : ''
+      });
 
       /* current predecessor is alive and valid */
 
@@ -251,138 +188,7 @@ async function notify (call, cb) {
   
   }
 
-  cb(null);
-
-}
-
-/**
- *
- */
-function get (call, cb) {
-
-  var keyId = call.request.id;
-
-  // invalid request
-  if (!Buffer.isBuffer(keyId)) {
-    return cb(new Error());
-  }
-
-  var predecessor = this.predecessor;
-
-  // invalid predecessor state
-  if (!isAddress(predecessor)) {
-    return cb(new Error());
-  }
-
-  var predecessorId = toSha1(predecessor);
-
-  var selfId = this.id;
-
-  // check if key belongs to this node
-  if (!isBetween(keyId, predecessorId, selfId, false, true)) {
-
-    // invalid request
-    return cb(new Error()); 
-
-  }
-
-  var key = keyId.toString('hex');
-
-  if (!_.has(this.bucket, key)) {
-
-    // invalid request
-    return cb(new Error()); 
-  }
-
-  this.emit('get', { key });
-
-  cb(null, { value: this.bucket[key] });
-
-}
-
-/**
- *
- */
-function set (call, cb) {
-
-  var keyId = call.request.id;
-
-  // invalid request
-  if (!Buffer.isBuffer(keyId)) {
-    return cb(new Error());
-  }
-
-  var predecessor = this.predecessor;
-
-  // invalid predecessor state
-  if (!isAddress(predecessor)) {
-    return cb(new Error());
-  }
-
-  var predecessorId = toSha1(predecessor);
-
-  var selfId = this.id;
-
-  // check if key belongs to this node
-  if (!isBetween(keyId, predecessorId, selfId, false, true)) {
-
-    // invalid request
-    return cb(new Error()); 
-
-  }
-
-  var key = keyId.toString('hex');
-
-  this.bucket[key] = call.request.value;
-
-  this.emit('set', { key });
-
-  cb(null);
-
-}
-
-/**
- *
- */
-function del (call, cb) {
-
-  var keyId = call.request.id;
-
-  // invalid request
-  if (!Buffer.isBuffer(keyId)) {
-    return cb(new Error());
-  }
-
-  var predecessor = this.predecessor;
-
-  // invalid predecessor state
-  if (!isAddress(predecessor)) {
-    return cb(new Error());
-  }
-
-  var predecessorId = toSha1(predecessor);
-
-  var selfId = this.id;
-
-  // check if key belongs to this node
-  if (!isBetween(keyId, predecessorId, selfId, false, true)) {
-
-    // invalid request
-    return cb(new Error()); 
-
-  }
-
-  var key = keyId.toString('hex');
-
-  if (!_.has(this.bucket, key)) {
-
-    // invalid request
-    return cb(new Error()); 
-  }
-
-  delete this.bucket[key];
-
-  this.emit('delete', { key });
+  this.emit('notify', call.request);
 
   cb(null);
 
@@ -393,12 +199,7 @@ function del (call, cb) {
  */
 module.exports = {
   ping,
-  echo,
+  state,
   lookup, // aka findSuccessor
-  info,
-  split,
-  notify,
-  get,
-  set,
-  delete: del,
+  notify
 }
