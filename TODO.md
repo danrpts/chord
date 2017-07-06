@@ -1,5 +1,6 @@
 ### Chord Protocol
 
+- [x] Bucket class
 - [ ] JSDoc
 - [ ] Comments clean up
 - [ ] bind random port when 0
