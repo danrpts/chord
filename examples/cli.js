@@ -36,7 +36,7 @@ function printState (bucket) {
     info += `<Finger ${i}> ${finger[i]}\n`;
   }
 
-  console.log(info);
+  console.error(info);
 
 }
 
@@ -47,7 +47,7 @@ function printBucket (bucket) {
     info += `<Entry ${idStr}> ${bucket.hashtable[idStr].toString('utf8')}\n`;
   }
 
-  console.log(info);
+  console.error(info);
 
 }
 
@@ -87,7 +87,7 @@ if (argv.version) {
 if (argv._.length > 0
 
   // invalid port number
-  ||  _.has(argv, 'p') && !isPort(argv.p)
+  ||  _.has(argv, 'p') && (argv.p != 0) && !isPort(argv.p)
 
   // invalid successor count
   ||  _.has(argv, 'r') && !_.isNumber(argv.r) 
@@ -102,9 +102,16 @@ if (argv._.length > 0
 // start cli
 } else {
 
-  // create bucket and bring online
-  const bucket = new Bucket(argv.p, argv.r);
-  bucket.start();
+  const bucket = new Bucket({
+    nSuccessors: argv.r
+  });
+
+  try {
+    bucket.listen(argv.p);
+  } catch (e) {
+    console.error(e);
+    process.exit(1);  
+  } 
 
   // define command interface
   const rl = readline.createInterface({
@@ -275,7 +282,7 @@ if (argv._.length > 0
 
         (async () => {
           try {
-            bucket.stop();
+            bucket.close();
           } catch (e) {
             console.error(e);
           } finally {
@@ -283,7 +290,7 @@ if (argv._.length > 0
           }
         })();
         break
-        
+
       case 'help':
 
         printHelp();

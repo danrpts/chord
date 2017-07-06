@@ -1,9 +1,11 @@
 ### Chord Protocol
 
 - [x] Bucket class
+- [ ] Bucket replication
+- [ ] Remove get-port dependency
 - [ ] JSDoc
 - [ ] Comments clean up
-- [ ] bind random port when 0
+- [x] bind random port when 0
 - [ ] fix closestPrecedingNode to search finger table and successor list for optimal peer
 - [ ] status codes
 - [ ] optional WebSocket support
