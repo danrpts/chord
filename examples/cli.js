@@ -3,6 +3,7 @@
 const _ = require('underscore');
 const minimist = require('minimist');
 const readline = require('readline');
+const ip = require('ip');
 const Bucket = require('../lib/bucket.js').Bucket
 const utils = require('../lib/utils.js');
 const isPort = utils.isPort
@@ -20,7 +21,7 @@ function printUsage () {
 
 }
 
-function printState (bucket) {
+function printState (bucket, withFingers = false) {
 
   var info = '';
   info += `<Predecessor> ${(bucket.predecessor) ? bucket.predecessor : ''}\n`;
@@ -31,20 +32,22 @@ function printState (bucket) {
     info += `<Successor ${i}> ${successor[i]}\n`;
   }
 
-  var finger = bucket.finger
-  for (let i in finger) {
-    info += `<Finger ${i}> ${finger[i]}\n`;
+  if (withFingers) {
+    let finger = bucket.finger
+    for (let i in finger) {
+      info += `<Finger ${i}> ${finger[i]}\n`;
+    }
   }
 
   console.error(info);
 
 }
 
-function printBucket (bucket) {
+function printBucket (contents) {
 
   var info = '';
-  for (let idStr in bucket.hashtable) {
-    info += `<Entry ${idStr}> ${bucket.hashtable[idStr].toString('utf8')}\n`;
+  for (let key in contents) {
+    info += `<Entry ${key}> ${contents[key].toString('utf8')}\n`;
   }
 
   console.error(info);
@@ -60,8 +63,8 @@ function printHelp () {
   console.error(' set <key> [value]         Create/update a key in the network.');
   console.error(' del <key>                 Delete a key and value from the network.');
   console.error(' ping <address>            Ping a remote peer.');
-  console.error(' state                     Print info about this peer.');
-  console.error(' bucket                    Print bucket contents.')
+  console.error(' state [-f]                Print info about this peer.');
+  console.error(' bucket [address]          Print bucket contents.')
   console.error(' quit                      Leave the network and exit.');
   console.error(' help                      Show this screen.\n');
 
@@ -86,7 +89,7 @@ if (argv.version) {
 // check for invalid arguments
 if (argv._.length > 0
 
-  // invalid port number
+  // invalid port number (use 0 for random port)
   ||  _.has(argv, 'p') && (argv.p != 0) && !isPort(argv.p)
 
   // invalid successor count
@@ -107,7 +110,7 @@ if (argv._.length > 0
   });
 
   try {
-    bucket.listen(argv.p);
+    bucket.listen(argv.p, ip.address());
   } catch (e) {
     console.error(e);
     process.exit(1);  
@@ -127,7 +130,7 @@ if (argv._.length > 0
 
   rl.prompt();
 
-  rl.on('line', (line) => {
+  rl.on('line', line => {
 
     if (!line) {
       rl.prompt();
@@ -174,7 +177,7 @@ if (argv._.length > 0
         if (!isAddress(address)) {
           printHelp();
           rl.prompt();
-          break;
+          break
         }
 
         (async () => {
@@ -268,14 +271,32 @@ if (argv._.length > 0
 
       case 'state':
         
-        printState(bucket);
+        printState(bucket, args.f);
         rl.prompt();
         break
 
       case 'bucket':
-        
-        printBucket(bucket);
-        rl.prompt();
+
+        var address = args._[0]
+
+        // print local
+        if (!isAddress(address)) {
+          printBucket(bucket.hashtable);
+          rl.prompt();
+          break
+        }
+
+        // print remote
+        (async () => {
+          try {
+            let contents = await bucket.all(address);
+            printBucket(contents);
+          } catch (e) {
+            console.error(e);
+          } finally {
+            rl.prompt();
+          }
+        })();
         break
 
       case 'quit':
