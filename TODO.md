@@ -3,6 +3,7 @@
 - [x] Bucket class
 - [ ] Bucket replication over successor list
 - [x] Bucket partition on join
+- [x] Bug fix: partition before set and set before notify
 - [ ] Remove get-port dependency in lib files
 - [x] Remove IP dependency in lib files
 - [ ] JSDoc
