@@ -29,10 +29,12 @@ message stateResponse {
 
 message lookupRequest {
   bytes id = 1;
+  uint32 counter = 2;
 }
 
 message lookupResponse {
   string successor = 1;
+  uint32 hops = 2;
 }
 
 message notifyRequest {
