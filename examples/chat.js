@@ -4,6 +4,7 @@ const _ = require('underscore');
 const minimist = require('minimist');
 const readline = require('readline');
 const ip = require('ip').address();
+const chalk = require('chalk');
 const Bucket = require('../lib/bucket.js').Bucket;
 var http = require('http').createServer();
 var ioServer = require('socket.io')(http);
@@ -20,11 +21,11 @@ argv._ = _.compact(argv._);
 
 (async () => {
 
-  const bucket = new Bucket();
+  const users = new Bucket();
 
   try {
     
-    await bucket.listen(argv.p || 0, ip);
+    await users.listen(0, ip);
 
     await ioServer.listen(0, ip);
 
@@ -32,15 +33,15 @@ argv._ = _.compact(argv._);
       throw new Error('Invalid host');
     }
     
-    await bucket.join(argv.join);
+    await users.join(argv.join);
 
     if (!_.isString(argv.nick)
       || argv.nick === ''
-      || await bucket.has(argv.nick)) {
+      || await users.has(argv.nick)) {
       throw new Error('Invalid nick');
     }
 
-    await bucket.set(argv.nick, ioServer.url);
+    await users.set(argv.nick, ioServer.url);
 
   } catch (e) {
     console.error(e);
@@ -51,7 +52,7 @@ argv._ = _.compact(argv._);
     socket.on('tell', object => {
       process.stdout.clearLine();
       process.stdout.cursorTo(0);
-      console.log(`<${object.from}> ${object.message}`);
+      console.log(`${chalk.inverse(object.from)} ${object.message}`);
       rl.prompt(true);
     });
   });
@@ -84,7 +85,7 @@ argv._ = _.compact(argv._);
           const ioClient = require('socket.io-client');
           var host;
           try {
-            host = await bucket.get(friend);
+            host = await users.get(friend);
           } catch (e) {
             process.stdout.clearLine();
             process.stdout.cursorTo(0);
@@ -94,9 +95,7 @@ argv._ = _.compact(argv._);
           }
           host = host.toString('utf8');
           if (!isAddress(host)) {
-            process.stdout.clearLine();
-            process.stdout.cursorTo(0);
-            rl.prompt(true);
+            rl.prompt();
             return;
           }
           const socket = ioClient(`http://${host}`);
