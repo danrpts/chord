@@ -1,7 +1,8 @@
 ### Chord Protocol
 - [ ] optional WebSocket support
 - [ ] LAN Discovery for bootstrap
-- [ ]
+- [ ] RPC message fuller thought out and documentation
+- [ ] crypto and DH key exchange
 
 ### Chord class
 - [x] bind random port when 0
@@ -10,6 +11,7 @@
 - [ ] linear route generator using successor list
 - [ ] lg route generator using finger table and successor list
 - [ ] fix await in loop of fixSuccessor
+- [ ] handle IP address change
 
 ### Bucket class
 - [ ] successor list replication
