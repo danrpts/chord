@@ -4,6 +4,10 @@
 - [ ] RPC message fuller thought out and documentation
 - [ ] crypto and DH key exchange
 
+### Maintenance Protocol
+- [ ] Non-overlapping calls
+- [ ] use minimum/maximum period between calls
+
 ### Chord class
 - [x] bind random port when 0
 - [x] fixPrecessor removal using pure notify 
@@ -28,8 +32,10 @@
 - [ ] define and use status codes
 - [ ] Remove get-port dependency in lib files
 - [x] Remove IP dependency in lib files
+- [ ] Port to C, C++, or Rust
 
 ### Bugs
+- [X] Bug fix: incorrect FINGER_BASE initialization
 - [x] Bug fix: partition before set and set before notify
 * [x] Bug fix: invalid partitioning due to improper use of isBetween
   - known edge case of isBetween utility since it's made for identifier circle range checking
