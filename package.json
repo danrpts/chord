@@ -12,7 +12,7 @@
     "chat": "DEBUG=chat node ./examples/chat.js"
   },
   "author": "Daniel Peterson <danrpts@gmail.com>",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "dependencies": {
     "bignum": "^0.12.5",
     "get-port": "^3.1.0",
