@@ -11,24 +11,16 @@ cd ./chord
 npm install
 ```
 
-## Using example applications
-To spin up a peer on a random port:
+## Using examples
+To spin up a peer on a random port: `npm run cli -- -p 0`
 
-`npm run cli -- -p 0`
-
-Now to view CLI commands:
-
-`help`
+Now to view CLI commands: `help`
 
 or
 
-To spin up a peer on a random port, join a network, and set you chat nickname use the following command:
+To spin up a peer on a random port, join a network, and set your nickname: `npm run chat -- --join=<host> --nick=<name>`
 
-`npm run chat -- --join=<host> --nick=<string>`
-
-Now to send a hello world message to another user:
-
-`/tell <string> hello world!`
+Now to send a hello world message to another user: `/tell <name> hello world!`
 
 ## Chord API
 
