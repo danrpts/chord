@@ -18,7 +18,7 @@ Now to view CLI commands: `help`
 
 or
 
-To spin up a peer on a random port, join a network, and set your nickname: `npm run chat -- --join=<host> --nick=<name>`
+To spin up a peer, join a network, and set your nickname: `npm run chat -- --join=<host> --nick=<name>`
 
 Now to send a hello world message to another user: `/tell <name> hello world!`
 
