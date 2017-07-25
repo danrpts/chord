@@ -3,6 +3,7 @@
 - [ ] LAN Discovery for bootstrap
 - [ ] RPC message fuller thought out and documentation
 - [ ] crypto and DH key exchange
+- [ ] abuse web sockets in place of grpc so that this module may run in browser
 
 ### Maintenance Protocol
 - [ ] Non-overlapping calls
@@ -22,6 +23,7 @@
 - [ ] updates on replicas upon set event
 - [x] partitioning upon fully joined event
 - [ ] double check partitioning bounds logic
+- [ ] use some type of data store for hash table contents
 
 ### Misc
 - [ ] JSDoc
@@ -35,6 +37,7 @@
 - [ ] Port to C, C++, or Rust
 
 ### Bugs
+- [ ] there might be a bug in the lookup server side procedure that throws invalid successor state error
 - [X] Bug fix: incorrect FINGER_BASE initialization
 - [x] Bug fix: partition before set and set before notify
 * [x] Bug fix: invalid partitioning due to improper use of isBetween
