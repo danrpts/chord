@@ -3,7 +3,7 @@
 - [ ] LAN Discovery for bootstrap
 - [ ] RPC message fuller thought out and documentation
 - [ ] crypto and DH key exchange
-- [ ] abuse web sockets in place of grpc so that this module may run in browser
+- [ ] NAT UDP hole punching
 
 ### Maintenance Protocol
 - [ ] Non-overlapping calls
