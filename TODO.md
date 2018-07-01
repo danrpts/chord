@@ -1,9 +1,9 @@
 ### Chord Protocol
 - [ ] optional WebSocket support
 - [ ] LAN Discovery for bootstrap
-- [ ] RPC message fuller thought out and documentation
+- [ ] RPC message fully thought out and documentation
 - [ ] crypto and DH key exchange
-- [ ] NAT UDP hole punching
+- [ ] UPnP, NAT Punching
 
 ### Maintenance Protocol
 - [ ] Non-overlapping calls
