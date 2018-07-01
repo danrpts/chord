@@ -1,7 +1,7 @@
 {
   "name": "chord",
   "version": "0.0.1",
-  "description": "JavaScript Chord API for Distributed Hash Tables",
+  "description": "A ring-style distributed hash table built for Node.js.",
   "repository": {
     "type": "git",
     "url": "https://github.com/danrpts/chord.git"
