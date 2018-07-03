@@ -1,7 +1,7 @@
 {
   "name": "chord",
   "version": "0.0.1",
-  "description": "JavaScript Chord API for Distributed Hash Tables",
+  "description": "Distributed Hash Table",
   "repository": {
     "type": "git",
     "url": "https://github.com/danrpts/chord.git"
@@ -14,23 +14,23 @@
   "author": "Daniel Peterson <danrpts@gmail.com>",
   "license": "MIT",
   "dependencies": {
-    "bignum": "^0.12.5",
+    "bignum": "^0.13.0",
     "get-port": "^3.1.0",
-    "grpc": "^1.4.1",
+    "grpc": "^1.12.4",
     "ip": "^1.1.5",
     "underscore": "^1.8.3"
   },
   "devDependencies": {
     "chalk": "^2.0.1",
-    "eslint": "^3.19.0",
+    "eslint": "^5.0.1",
     "eslint-config-airbnb-base": "^11.2.0",
     "eslint-config-google": "^0.9.1",
     "eslint-config-standard": "^10.2.1",
-    "eslint-plugin-import": "^2.7.0",
+    "eslint-plugin-import": "^2.13.0",
     "eslint-plugin-node": "^5.1.0",
     "eslint-plugin-promise": "^3.5.0",
     "eslint-plugin-standard": "^3.0.1",
     "minimist": "^1.2.0",
-    "socket.io": "^2.0.3"
+    "socket.io": "^2.1.1"
   }
 }
