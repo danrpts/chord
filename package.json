@@ -1,7 +1,8 @@
 {
   "name": "chord",
   "version": "0.0.1",
-  "description": "Distributed Hash Table",
+  "description":
+    "A distributed hash table and discovery protocol for building P2P application on Node.js",
   "repository": {
     "type": "git",
     "url": "https://github.com/danrpts/chord.git"
@@ -12,7 +13,7 @@
     "chat": "DEBUG=chat node ./examples/chat.js"
   },
   "author": "Daniel Peterson <danrpts@gmail.com>",
-  "license": "MIT",
+  "license": "GPL-3.0",
   "dependencies": {
     "bignum": "^0.13.0",
     "get-port": "^3.1.0",

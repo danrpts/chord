@@ -1,9 +1,7 @@
 ### Chord Protocol
-- [ ] optional WebSocket support
-- [ ] LAN Discovery for bootstrap
-- [ ] RPC message fuller thought out and documentation
-- [ ] crypto and DH key exchange
-- [ ] abuse web sockets in place of grpc so that this module may run in browser
+- [ ] LAN discovery for bootstraping
+- [ ] Plain and encrypted channels (DH key exchange)
+- [ ] NAT Traveral: UPnP
 
 ### Maintenance Protocol
 - [ ] Non-overlapping calls
@@ -28,13 +26,13 @@
 ### Misc
 - [ ] JSDoc
 - [x] ESlint
-- [ ] fuller comments
+- [ ] comments
 - [ ] unit tests
 - [ ] documentation
+- [ ] RPC protocol review
 - [ ] define and use status codes
 - [ ] Remove get-port dependency in lib files
 - [x] Remove IP dependency in lib files
-- [ ] Port to C, C++, or Rust
 
 ### Bugs
 - [ ] there might be a bug in the lookup server side procedure that throws invalid successor state error
