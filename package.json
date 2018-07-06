@@ -2,7 +2,7 @@
   "name": "chord",
   "version": "0.0.1",
   "description":
-    "A distributed hash table and discovery protocol for building P2P application on Node.js",
+    "Chord is a key-based routing protocol used to build higher-level p2p applications such as DHTs.",
   "repository": {
     "type": "git",
     "url": "https://github.com/danrpts/chord.git"
