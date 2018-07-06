@@ -1,55 +1,55 @@
-'use strict'
+"use strict";
 
-const _ = require('underscore');
-const minimist = require('minimist');
-const readline = require('readline');
-const ip = require('ip').address();
-const chalk = require('chalk');
-const Bucket = require('../lib/bucket.js').Bucket;
-var http = require('http').createServer();
-var ioServer = require('socket.io')(http);
-ioServer.listen = (port, ip) => new Promise((res) => {
-  http.listen(port, ip, () => {
-    ioServer.url = `${ip}:${http.address().port}`;
-    res(ioServer.url);
+const _ = require("underscore");
+const minimist = require("minimist");
+const readline = require("readline");
+const ip = require("ip").address();
+const chalk = require("chalk");
+const Bucket = require("../lib/bucket.js").Bucket;
+var http = require("http").createServer();
+var ioServer = require("socket.io")(http);
+ioServer.listen = (port, ip) =>
+  new Promise(res => {
+    http.listen(port, ip, () => {
+      ioServer.url = `${ip}:${http.address().port}`;
+      res(ioServer.url);
+    });
   });
-});
-const utils = require('../lib/utils.js');
+const utils = require("../lib/utils.js");
 const isAddress = utils.isAddress;
 const argv = minimist(process.argv.slice(2));
 argv._ = _.compact(argv._);
 
 (async () => {
-
   const users = new Bucket();
 
   try {
-    
     await users.listen(0, ip);
 
     await ioServer.listen(0, ip);
 
     if (!isAddress(argv.join)) {
-      throw new Error('Invalid host');
+      throw new Error("Invalid host");
     }
-    
+
     await users.join(argv.join);
 
-    if (!_.isString(argv.nick)
-      || argv.nick === ''
-      || await users.has(argv.nick)) {
-      throw new Error('Invalid nick');
+    if (
+      !_.isString(argv.nick) ||
+      argv.nick === "" ||
+      (await users.has(argv.nick))
+    ) {
+      throw new Error("Invalid nick");
     }
 
     await users.set(argv.nick, ioServer.url);
-
   } catch (e) {
     console.error(e);
-    process.exit(1); 
+    process.exit(1);
   }
 
-  ioServer.on('connection', socket => {
-    socket.on('tell', object => {
+  ioServer.on("connection", socket => {
+    socket.on("tell", object => {
       process.stdout.clearLine();
       process.stdout.cursorTo(0);
       console.log(`${chalk.inverse(object.from)} ${object.message}`);
@@ -62,27 +62,25 @@ argv._ = _.compact(argv._);
 
   rl.prompt();
 
-  rl.on('line', line => {
-
+  rl.on("line", line => {
     if (!line) {
       rl.prompt();
       return;
     }
 
     const me = argv.nick;
-    let [cmd, ...args] = line.trim().split(' ');
+    let [cmd, ...args] = line.trim().split(" ");
     args = minimist(args);
     args._ = _.compact(args._);
 
     switch (cmd) {
-
-      case '/tell':
+      case "/tell":
         (async () => {
           const friend = args._[0];
           if (!_.isString(friend)) {
             return;
           }
-          const ioClient = require('socket.io-client');
+          const ioClient = require("socket.io-client");
           var host;
           try {
             host = await users.get(friend);
@@ -93,29 +91,26 @@ argv._ = _.compact(argv._);
             rl.prompt(true);
             return;
           }
-          host = host.toString('utf8');
+          host = host.toString("utf8");
           if (!isAddress(host)) {
             rl.prompt();
             return;
           }
           const socket = ioClient(`http://${host}`);
-          const message = args._.slice(1).join(' ');
-          socket.emit('tell', { from: me, message });
+          const message = args._.slice(1).join(" ");
+          socket.emit("tell", { from: me, message });
           rl.prompt();
           return;
         })();
         break;
 
-      default: 
+      default:
         rl.prompt();
         break;
-    
     }
-
   });
 
-  rl.on('close', () => {
+  rl.on("close", () => {
     process.exit(0);
   });
-
 })();

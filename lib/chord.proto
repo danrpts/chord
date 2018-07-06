@@ -44,5 +44,3 @@ message notifyRequest {
 message notifyResponse {
 
 }
-
-

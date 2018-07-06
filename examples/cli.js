@@ -1,14 +1,14 @@
-const _ = require('underscore');
-const minimist = require('minimist');
-const readline = require('readline');
-const ip = require('ip');
-const Bucket = require('../lib/bucket.js').Bucket;
-const utils = require('../lib/utils.js');
-const version = require('../package.json').version;
+const _ = require("underscore");
+const minimist = require("minimist");
+const readline = require("readline");
+const ip = require("ip");
+const Bucket = require("../lib/bucket.js").Bucket;
+const utils = require("../lib/utils.js");
+const version = require("../package.json").version;
 
 const isPort = utils.isPort;
 const isAddress = utils.isAddress;
-const arg0 = 'chord';
+const arg0 = "chord";
 
 // parse command line arguments
 const argv = minimist(process.argv.slice(2));
@@ -17,22 +17,28 @@ const argv = minimist(process.argv.slice(2));
 argv._ = _.compact(argv._);
 
 function printUsage() {
-  const spacer = ' '.repeat(arg0.length);
+  const spacer = " ".repeat(arg0.length);
   console.error(`Usage: ${arg0} [--version] [--help] [-p <port>]`);
   console.error(`       ${spacer} [-r <replicas>] [--join=<address>]\n`);
 }
 
 function printHelp() {
-  console.error('Commands:');
-  console.error(' join <address>            Add this peer to a network.');
-  console.error(' get <key>                 Read a value from network.');
-  console.error(' set <key> [value]         Create/update a key in the network.');
-  console.error(' del <key>                 Delete a key and value from the network.');
-  console.error(' ping <address>            Ping a remote peer.');
-  console.error(' state [address] [-f]      Print state information.');
-  console.error(' dump [address]            Print bucket contents.');
-  console.error(' quit                      Leave the network and exit.');
-  console.error(' help                      Show this screen.\n');
+  console.error("Commands:");
+  console.error(" join <address>            Add this peer to a network.");
+  console.error(" get <key>                 Read a value from network.");
+  console.error(
+    " set <key> [value]         Create/update a key in the network."
+  );
+  console.error(
+    " del <key>                 Delete a key and value from the network."
+  );
+  console.error(" ping <address>            Ping a remote peer.");
+  console.error(
+    " state [address] [-f]      Print peer information and optional finger table."
+  );
+  console.error(" dump [address]            Print bucket contents.");
+  console.error(" quit                      Leave the network and exit.");
+  console.error(" help                      Show this screen.\n");
 }
 
 if (argv.version) {
@@ -48,21 +54,20 @@ if (argv.version) {
 }
 
 // check for invalid arguments
-if (argv._.length > 0
-
+if (
+  argv._.length > 0 ||
   // invalid port number (use 0 for random port)
-  || (_.has(argv, 'p') && (argv.p !== 0) && !isPort(argv.p))
-
+  (_.has(argv, "p") && argv.p !== 0 && !isPort(argv.p)) ||
   // invalid successor count
-  || (_.has(argv, 'r') && !_.isNumber(argv.r))
-
+  (_.has(argv, "r") && !_.isNumber(argv.r)) ||
   // invalid host address
-  || (_.has(argv, 'join') && !isAddress(argv.join))) {
+  (_.has(argv, "join") && !isAddress(argv.join))
+) {
   printUsage(arg0);
 
   process.exit(1);
 
-// start cli
+  // start cli
 } else {
   (async () => {
     let host;
@@ -72,31 +77,31 @@ if (argv._.length > 0
     const rl = readline.createInterface(process.stdin, process.stdout);
 
     const bucket = new Bucket({
-      nSuccessors: argv.r,
+      nSuccessors: argv.r
     });
 
-    bucket.on('predecessor::up', (up) => {
+    bucket.on("predecessor::up", up => {
       process.stdout.clearLine();
       process.stdout.cursorTo(0);
       console.log(`predecessor::up ${up}`);
       rl.prompt(true);
     });
 
-    bucket.on('predecessor::down', (down) => {
+    bucket.on("predecessor::down", down => {
       process.stdout.clearLine();
       process.stdout.cursorTo(0);
       console.log(`predecessor::down ${down}`);
       rl.prompt(true);
     });
 
-    bucket.on('successor::up', (up) => {
+    bucket.on("successor::up", up => {
       process.stdout.clearLine();
       process.stdout.cursorTo(0);
       console.log(`successor::up ${up}`);
       rl.prompt(true);
     });
 
-    bucket.on('successor::down', (down) => {
+    bucket.on("successor::down", down => {
       process.stdout.clearLine();
       process.stdout.cursorTo(0);
       console.log(`successor::down ${down}`);
@@ -105,8 +110,8 @@ if (argv._.length > 0
 
     try {
       await bucket.listen(argv.p, ip.address());
-      console.log(`${bucket.id.toString('hex')} on ${bucket.address}`);
-      if (_.has(argv, 'join')) {
+      console.log(`${bucket.id.toString("hex")} on ${bucket.address}`);
+      if (_.has(argv, "join")) {
         await bucket.join(argv.join);
       }
     } catch (e) {
@@ -116,17 +121,17 @@ if (argv._.length > 0
 
     rl.prompt();
 
-    rl.on('close', () => {
+    rl.on("close", () => {
       process.exit(0);
     });
 
-    rl.on('line', (line) => {
+    rl.on("line", line => {
       if (!line) {
         rl.prompt();
         return;
       }
 
-      const [command, ...commandArgs] = line.trim().split(' ');
+      const [command, ...commandArgs] = line.trim().split(" ");
       const parsedCommandArgs = minimist(commandArgs);
       parsedCommandArgs._ = _.compact(parsedCommandArgs._);
 
@@ -134,9 +139,7 @@ if (argv._.length > 0
       // handle empty line
 
       switch (command) {
-
-        case 'ping':
-
+        case "ping":
           host = parsedCommandArgs._[0];
 
           if (!isAddress(host)) {
@@ -157,8 +160,7 @@ if (argv._.length > 0
           })();
           break;
 
-        case 'join':
-
+        case "join":
           host = parsedCommandArgs._[0];
 
           if (!isAddress(host)) {
@@ -178,8 +180,7 @@ if (argv._.length > 0
           })();
           break;
 
-        case 'get':
-
+        case "get":
           key = parsedCommandArgs._[0];
 
           if (!_.isString(key)) {
@@ -191,7 +192,7 @@ if (argv._.length > 0
           (async () => {
             try {
               value = await bucket.get(key);
-              console.log(`<Entry ${key}> ${value.toString('utf8')}`);
+              console.log(`<Entry ${key}> ${value.toString("utf8")}`);
             } catch (__) {
               console.error(`<Entry ${key}> undefined`);
             } finally {
@@ -200,10 +201,9 @@ if (argv._.length > 0
           })();
           break;
 
-        case 'set':
-
+        case "set":
           key = parsedCommandArgs._[0];
-          value = Buffer.from(parsedCommandArgs._.slice(1).join(' '));
+          value = Buffer.from(parsedCommandArgs._.slice(1).join(" "));
 
           if (!_.isString(key)) {
             printHelp();
@@ -222,8 +222,7 @@ if (argv._.length > 0
           })();
           break;
 
-        case 'del':
-
+        case "del":
           key = parsedCommandArgs._[0];
 
           if (!_.isString(key)) {
@@ -243,8 +242,7 @@ if (argv._.length > 0
           })();
           break;
 
-        case 'state':
-
+        case "state":
           host = parsedCommandArgs._[0];
 
           // print local
@@ -255,7 +253,11 @@ if (argv._.length > 0
           (async () => {
             try {
               const response = await bucket.state(host, parsedCommandArgs.f);
-              console.log(`<Predecessor> ${(response.predecessor) ? response.predecessor : ''}`);
+              console.log(
+                `<Predecessor> ${
+                  response.predecessor ? response.predecessor : ""
+                }`
+              );
               console.log(`<Self> ${response.address}`);
               response.successor.forEach((successor, i) => {
                 console.log(`<Successor ${i}> ${successor}`);
@@ -273,8 +275,7 @@ if (argv._.length > 0
           })();
           break;
 
-        case 'dump':
-
+        case "dump":
           host = parsedCommandArgs._[0];
 
           // print local
@@ -285,8 +286,10 @@ if (argv._.length > 0
           (async () => {
             try {
               const entries = await bucket.dump(host);
-              Object.keys(entries).forEach((entryKey) => {
-                console.log(`<Entry ${entryKey}> ${entries[entryKey].toString('utf8')}`);
+              Object.keys(entries).forEach(entryKey => {
+                console.log(
+                  `<Entry ${entryKey}> ${entries[entryKey].toString("utf8")}`
+                );
               });
             } catch (e) {
               console.error(e);
@@ -296,8 +299,7 @@ if (argv._.length > 0
           })();
           break;
 
-        case 'quit':
-
+        case "quit":
           (async () => {
             try {
               bucket.close();
@@ -309,18 +311,15 @@ if (argv._.length > 0
           })();
           break;
 
-        case 'help':
-
+        case "help":
           printHelp();
           rl.prompt();
           break;
 
         default:
-
           printHelp();
           rl.prompt();
           break;
-
       }
     });
   })();
