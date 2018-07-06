@@ -1,15 +1,20 @@
-### Chord Protocol
+### Overall
+
 - [ ] LAN discovery for bootstraping
 - [ ] Plain and encrypted channels (DH key exchange)
 - [ ] NAT Traveral: UPnP
+- [ ] Nodes should perform a handshake, where they confirm versions and capabilities, and then optionally upgrade to an encrypted channel using a DH key exchange
+- [ ] Node IDs should be public keys, and each node should maintain a keychain for signing messages
 
 ### Maintenance Protocol
+
 - [ ] Non-overlapping calls
-- [ ] use minimum/maximum period between calls
+- [ ] Use minimum/maximum period between calls
 
 ### Chord class
+
 - [x] bind random port when 0
-- [x] fixPrecessor removal using pure notify 
+- [x] fixPrecessor removal using pure notify
 - [x] successor and predecessor up/down events
 - [ ] linear route generator using successor list
 - [ ] lg route generator using finger table and successor list
@@ -17,6 +22,7 @@
 - [ ] handle IP address change
 
 ### Bucket class
+
 - [ ] successor list replication
 - [ ] updates on replicas upon set event
 - [x] partitioning upon fully joined event
@@ -24,6 +30,7 @@
 - [ ] use some type of data store for hash table contents
 
 ### Misc
+
 - [ ] JSDoc
 - [x] ESlint
 - [ ] comments
@@ -35,9 +42,11 @@
 - [x] Remove IP dependency in lib files
 
 ### Bugs
+
 - [ ] there might be a bug in the lookup server side procedure that throws invalid successor state error
-- [X] Bug fix: incorrect FINGER_BASE initialization
+- [x] Bug fix: incorrect FINGER_BASE initialization
 - [x] Bug fix: partition before set and set before notify
+
 * [x] Bug fix: invalid partitioning due to improper use of isBetween
   - known edge case of isBetween utility since it's made for identifier circle range checking
   - consider defining utility methods for other special identifier circle range check
